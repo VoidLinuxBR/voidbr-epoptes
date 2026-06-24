@@ -1,3 +1,4 @@
+#!/usr/bin/bash
 # Maintainer : Eduardo Charquero <eduardo.charquero@gmail.com>
 
 pkgname=epoptes
@@ -73,15 +74,17 @@ post_install() {
   sed -i 's/pipes\.quote/shlex.quote/g' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 
   ln -sf /etc/sv/epoptes /var/service/
+  echo 'usermod -aG epoptes "$user"'
 
-	echo "${RED}The installation has finished. Please bare in mind you'll have to do the following before using Epoptes:"
-	echo "1.- You will have to add yourself to the 'epoptes' group."
-	echo "2.- You will have to run as root:"
-	echo "    'systemctl enable epoptes' to enable the Epoptes server daemon."
-	echo "3.- You may need to restart your system for everything to work."
-	echo "4.- If you don't want to restart your system, then [after doing all of the above] you will have to run as root:"
-	echo "    'systemctl start epoptes' to start the Epoptes server daemon."
-	echo "After all this you still have to log out and then log back in and now Epoptes should work without a problem.${RESET}"
+  log "A instalação foi concluída. Antes de utilizar o Epoptes, lembre-se de fazer o seguinte:"
+  log "1.- Você deverá adicionar seu usuário ao grupo 'epoptes' - usermod -aG epoptes "$USER""
+  log "2.- Você deverá executar como root:"
+  log "    'vservice enable epoptes' para habilitar o serviço do servidor Epoptes."
+  log "3.- Pode ser necessário reiniciar o sistema para que tudo funcione corretamente."
+  log "4.- Se não quiser reiniciar o sistema, após realizar todos os passos acima, execute como root:"
+  log "    'vservice start epoptes' para iniciar o serviço do servidor Epoptes."
+  log "Após concluir tudo isso, você ainda precisará encerrar a sessão e entrar novamente."
+  log "Feito isso, o Epoptes deverá funcionar normalmente.${RESET}"
 }
 
 pre_upgrade() {
