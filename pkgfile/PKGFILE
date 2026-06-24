@@ -53,15 +53,14 @@ pre_install() {
 }
 
 post_install() {
+  pkgname="epoptes"
+  if ! getent group epoptes >/dev/null; then
+    groupadd epoptes >/dev/null || true
+    echo "Group 'epoptes' has been added."
+  fi
+  usermod -aG epoptes "$user" >/dev/null || true
 
-	if getent group epoptes; then
-		echo "Group 'epoptes' already exists. Skipping group's creation."
-	else
-		groupadd epoptes || true
-		echo "Group 'epoptes' has been added."
-	fi
-
-	mkdir -p /etc/epoptes/ || true
+	mkdir -p /etc/epoptes/ >/dev/null|| true
 	if ! [ -s /etc/epoptes/server.key ] || ! [ -s /etc/epoptes/server.crt ]; then
 		faketime '1970-01-01 00:00:00 UTC' \
 			openssl req -batch -x509 -nodes \
@@ -70,19 +69,18 @@ post_install() {
 		chmod 600 /etc/epoptes/server.key
 	fi
 
-  sed -i 's/import pipes/import shlex/' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-  sed -i 's/pipes\.quote/shlex.quote/g' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py
+  sed -i 's/import pipes/import shlex/' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py || true
+  sed -i 's/pipes\.quote/shlex.quote/g' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py || true
 
-  ln -sf /etc/sv/epoptes /var/service/
-  echo 'usermod -aG epoptes "$user"'
+  ln -sf /etc/sv/epoptes /var/service/ >/dev/null || true
 
   log "A instalação foi concluída. Antes de utilizar o Epoptes, lembre-se de fazer o seguinte:"
-  log "1.- Você deverá adicionar seu usuário ao grupo 'epoptes' - usermod -aG epoptes "$USER""
+  log "1.- Você deverá adicionar seu usuário ao grupo 'epoptes' - ${YELLOW}sudo usermod -aG epoptes $user"
   log "2.- Você deverá executar como root:"
-  log "    'vservice enable epoptes' para habilitar o serviço do servidor Epoptes."
+  log "    ${YELLOW}'vservice enable epoptes' ${CYAN}para habilitar o serviço do servidor Epoptes."
   log "3.- Pode ser necessário reiniciar o sistema para que tudo funcione corretamente."
   log "4.- Se não quiser reiniciar o sistema, após realizar todos os passos acima, execute como root:"
-  log "    'vservice start epoptes' para iniciar o serviço do servidor Epoptes."
+  log "    ${YELLOW}'vservice start epoptes' ${CYAN}para iniciar o serviço do servidor Epoptes."
   log "Após concluir tudo isso, você ainda precisará encerrar a sessão e entrar novamente."
   log "Feito isso, o Epoptes deverá funcionar normalmente.${RESET}"
 }
