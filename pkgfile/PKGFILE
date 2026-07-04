@@ -34,6 +34,7 @@ depends=(gobject-introspection
 	xterm)
 optdepends=('xfce4-notifyd: XFCE notification support')
 backup=(/etc/default/epoptes)
+
 package() {
 	local dirs=("usr" "etc" "opt")
 	#   echo "DESTDIR=$DESTDIR"
