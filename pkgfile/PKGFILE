@@ -9,13 +9,13 @@ makedepends=(git python3-distutils-extra intltool patch)
 url="https://github.com/voidlinuxbr/$pkgname"
 source=(
 	"git+${url}.git"
-	"client-functions-only.patch"
+	"voidbr-epoptes-servidor.patch"
 )
 license=(GPL3)
 arch=(any)
 sha256sums=(
 	'SKIP'
-	'8c3ac3ea2e6a160199c29a04156cbae3b7a009222889ecd8f025aff9622038bf'
+	'582207809f21743086d9bbbe3e1299070dab6d93a6c89635bae3a37fb2d58b36'
 )
 depends=(gobject-introspection
 	gtk+3
@@ -56,7 +56,8 @@ prepare() {
 	#   wlroots do lado do cliente por enquanto.
 	# Os binarios (grim, wayvnc, socat) rodam no CLIENTE, nao aqui -
 	# esse pacote nao precisa deles como dependencia.
-	patch -p1 < "${srcdir}/client-functions-only.patch"
+	# gui.py: fix Python 3.14 (modulo "pipes" removido, virou "shlex").
+	patch -p1 < "${srcdir}/voidbr-epoptes-servidor.patch"
 }
 
 package() {
@@ -90,8 +91,6 @@ post_install() {
 			-keyout /etc/epoptes/server.key -out /etc/epoptes/server.crt
 		chmod 600 /etc/epoptes/server.key
 	fi
-  sed -i 's/import pipes/import shlex/' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py || true
-  sed -i 's/pipes\.quote/shlex.quote/g' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py || true
   ln -sf /etc/sv/epoptes /var/service/ >/dev/null || true
   log "A instalação foi concluída. Antes de utilizar o Epoptes, lembre-se de fazer o seguinte:"
   log "1.- Você deverá adicionar seu usuário ao grupo 'epoptes' - ${YELLOW}sudo usermod -aG epoptes $user"
