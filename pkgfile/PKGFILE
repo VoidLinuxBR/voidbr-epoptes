@@ -15,7 +15,7 @@ license=(GPL3)
 arch=(any)
 sha256sums=(
 	'SKIP'
-	'9d649656a6da4796f70176a90d2fe9f72a420bcb8bef4df67029f2c19f740ce4'
+	'8c3ac3ea2e6a160199c29a04156cbae3b7a009222889ecd8f025aff9622038bf'
 )
 depends=(gobject-introspection
 	gtk+3
