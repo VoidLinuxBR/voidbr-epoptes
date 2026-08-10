@@ -1,22 +1,17 @@
+#!/usr/bin/bash
 # Maintainer : Eduardo Charquero <eduardo.charquero@gmail.com>
 
 pkgname=voidbr-epoptes
 pkgver=$(date +%Y%m%d)
 pkgrel=$(date +%H%M)
-pkgdesc='An opensource computer lab management and monitoring tool (com suporte a Wayland nos clientes: thumbshots e observar/assistir)'
+pkgdesc='An opensource computer lab management and monitoring tool'
 replaces=(epoptes)
-makedepends=(git python3-distutils-extra intltool patch)
+makedepends=(git python3-distutils-extra intltool)
 url="https://github.com/voidlinuxbr/$pkgname"
-source=(
-	"git+${url}.git"
-	"client-functions-only.patch"
-)
+source=("git+${url}.git")
 license=(GPL3)
 arch=(any)
-sha256sums=(
-	'SKIP'
-	'9d649656a6da4796f70176a90d2fe9f72a420bcb8bef4df67029f2c19f740ce4'
-)
+sha256sums=('SKIP')
 depends=(gobject-introspection
 	gtk+3
 	iperf
@@ -40,31 +35,13 @@ depends=(gobject-introspection
 optdepends=('xfce4-notifyd: XFCE notification support')
 backup=(/etc/default/epoptes)
 
-prepare() {
-	cd "${srcdir}/${pkgname}"
-	# VoidBR patch: o client-functions e lido pelo epoptesd (aqui, no
-	# servidor) e ENVIADO para cada cliente na hora da conexao - e o
-	# proprio codigo confirma isso (twisted/plugins/epoptesd.py chama
-	# filter_bash('/usr/share/epoptes/client-functions') uma unica vez,
-	# na inicializacao do daemon). Por isso o patch de suporte a Wayland
-	# tem que estar aqui, no pacote do servidor, e nao (so) no cliente:
-	# - thumbshot(): remove o bypass que pulava thumbshots em Wayland.
-	# - get_monitored()/get_assisted(): usam wayvnc + socat como
-	#   "conexao reversa" quando $WAYLAND_DISPLAY esta definido no
-	#   cliente (wayvnc so escuta, nao tem -connect_or_exit como o
-	#   x11vnc; o socat faz a ponte). So funciona em Hyprland/Sway/
-	#   wlroots do lado do cliente por enquanto.
-	# Os binarios (grim, wayvnc, socat) rodam no CLIENTE, nao aqui -
-	# esse pacote nao precisa deles como dependencia.
-	patch -p1 < "${srcdir}/client-functions-only.patch"
-}
-
 package() {
 	local dirs=("usr" "etc" "opt")
 	#   echo "DESTDIR=$DESTDIR"
 	#   echo "pkgdir=$pkgdir"
 	#   echo "srcdir=$srcdir"
 	#   echo "_pkgsrc=$_pkgsrc"
+
 	cd ${srcdir}/${pkgname}
 	for dir in "${dirs[@]}"; do
 		if [ -d "${_pkgsrc}/${dir}" ]; then
@@ -72,9 +49,11 @@ package() {
 		fi
 	done
 }
+
 pre_install() {
 	log "Iniciando instalação"
 }
+
 post_install() {
   pkgname="epoptes"
   if ! getent group epoptes >/dev/null; then
@@ -82,6 +61,7 @@ post_install() {
     echo "Group 'epoptes' has been added."
   fi
   usermod -aG epoptes "$user" >/dev/null || true
+
 	mkdir -p /etc/epoptes/ >/dev/null|| true
 	if ! [ -s /etc/epoptes/server.key ] || ! [ -s /etc/epoptes/server.crt ]; then
 		faketime '1970-01-01 00:00:00 UTC' \
@@ -90,9 +70,12 @@ post_install() {
 			-keyout /etc/epoptes/server.key -out /etc/epoptes/server.crt
 		chmod 600 /etc/epoptes/server.key
 	fi
+
   sed -i 's/import pipes/import shlex/' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py || true
   sed -i 's/pipes\.quote/shlex.quote/g' /usr/lib/python3.14/site-packages/epoptes/ui/gui.py || true
+
   ln -sf /etc/sv/epoptes /var/service/ >/dev/null || true
+
   log "A instalação foi concluída. Antes de utilizar o Epoptes, lembre-se de fazer o seguinte:"
   log "1.- Você deverá adicionar seu usuário ao grupo 'epoptes' - ${YELLOW}sudo usermod -aG epoptes $user"
   log "2.- Você deverá executar como root:"
@@ -102,14 +85,12 @@ post_install() {
   log "    ${YELLOW}'vservice start epoptes' ${CYAN}para iniciar o serviço do servidor Epoptes."
   log "Após concluir tudo isso, você ainda precisará encerrar a sessão e entrar novamente."
   log "Feito isso, o Epoptes deverá funcionar normalmente.${RESET}"
-  log "Lembrete: o client-functions e lido so na inicializacao do epoptesd."
-  log "Se voce ja tinha o Epoptes rodando antes de atualizar, reinicie o"
-  log "serviço (${YELLOW}sudo vservice restart epoptes${CYAN}) para os clientes"
-  log "passarem a receber as funções novas de suporte a Wayland."
 }
+
 pre_upgrade() {
 	log "Iniciando upgrade"
 }
+
 post_upgrade() {
 	log "Finalizando upgrade"
 }
