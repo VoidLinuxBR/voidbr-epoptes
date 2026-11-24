@@ -62,6 +62,31 @@ sh_create_certificate() {
   fi
 }
 
+# O sh_enable_services do pkgbuildlib.sh so faz "systemctl enable": sem o
+# epoptesd rodando nao existe /run/epoptes/epoptes.socket e a interface
+# cai no tunel SSH para o host "server". Inicia (ou reinicia, no upgrade)
+# o servico aqui - so com systemd de pe, nunca dentro de chroot/instalador.
+sh_start_epoptes() {
+  [[ -d /run/systemd/system ]] || return 0
+  [[ ${IN_CHROOT_INSTALLER:-false} = true ]] && return 0
+  if ! $IS_UPGRADE; then
+    if systemctl start epoptes &>/dev/null; then
+      log_ok "Serviço epoptes iniciado..."
+    else
+      log_err "Erro ao iniciar o serviço epoptes: veja ${yellow}journalctl -u epoptes -b"
+    fi
+  else
+    # O client-functions e lido so na inicializacao do epoptesd e enviado
+    # aos clientes; sem reiniciar, eles continuam com a versao antiga.
+    # try-restart: so reinicia se ja estiver rodando.
+    if systemctl try-restart epoptes &>/dev/null; then
+      log_ok "Serviço epoptes reiniciado (clientes recebem as funções novas)..."
+    else
+      log_err "Erro ao reiniciar o serviço epoptes: veja ${yellow}journalctl -u epoptes -b"
+    fi
+  fi
+}
+
 post_install() {
   [[ $IS_VERBOSE = true ]] && sh_init                        || { sh_init 2>/dev/null                        || true; }
   [[ $IS_VERBOSE = true ]] && sh_copy_user_etc_usr_opt_files || { sh_copy_user_etc_usr_opt_files 2>/dev/null || true; }
@@ -76,13 +101,10 @@ post_install() {
 
   if ! $IS_UPGRADE; then
     sh_enable_services
-    msg "Para iniciar agora: ${yellow}sudo systemctl start epoptes"
+  fi
+  sh_start_epoptes
+  if ! $IS_UPGRADE; then
     msg "Encerre a sessão e entre novamente para valer o grupo 'epoptes'."
-  else
-    # O client-functions e lido so na inicializacao do epoptesd e enviado
-    # aos clientes; sem reiniciar, eles continuam com a versao antiga.
-    msg "Reinicie o servidor para os clientes receberem as funções novas:"
-    msg "${yellow}sudo systemctl restart epoptes"
   fi
 
   sh_finish
