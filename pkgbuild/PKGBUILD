@@ -1,0 +1,107 @@
+# Maintainer: Vilmar Catafesta <vcatafesta@gmail.com>
+
+pkgname=voidbr-epoptes
+pkgver=20261124.0237
+pkgrel=1
+pkgdesc='An opensource computer lab management and monitoring tool (com suporte a Wayland nos clientes: thumbshots e observar/assistir)'
+arch=(any)
+url="https://github.com/voidlinuxbr/$pkgname"
+license=(GPL-3.0-or-later)
+depends=(
+	gobject-introspection
+	gtk3
+	iperf
+	iproute2
+	libfaketime
+	libnotify
+	librsvg
+	notification-daemon
+	openssl
+	python
+	python-cairo
+	python-dbus
+	python-gobject
+	python-netifaces
+	python-pyopenssl
+	python-service-identity
+	python-twisted
+	socat
+	tigervnc
+	x11vnc
+	xterm
+)
+makedepends=(git patch)
+optdepends=('xfce4-notifyd: XFCE notification support')
+provides=(epoptes)
+conflicts=(epoptes)
+backup=(etc/default/epoptes)
+# Automatically detect and use the correct install file
+if [ -e "${pkgname}.install" ]; then
+	install=${pkgname}.install
+elif [ -e "pkgbuild.install" ]; then
+	install=pkgbuild.install
+fi
+# O .patch e o mesmo do pkgfile/ (Void): aqui e um link simbolico para
+# ../pkgfile/voidbr-epoptes-servidor.patch, para manter uma unica copia.
+source=(
+	"git+$url.git"
+	"voidbr-epoptes-servidor.patch"
+)
+sha256sums=(
+	'SKIP'
+	'8936f7917457418dbee1b6eb9075e33e1b304e783087e3e09b9228baf0a59d08'
+)
+
+pkgver() {
+	cd "$pkgname"
+	git log -1 --format=%cd --date=format:%Y%m%d.%H%M
+}
+
+prepare() {
+	cd "$pkgname"
+	# VoidBR patch (mesmo do pacote Void): o client-functions e lido pelo
+	# epoptesd aqui no servidor e ENVIADO a cada cliente na conexao, por
+	# isso o suporte a Wayland dos clientes tem que estar neste pacote.
+	# - thumbshot(): remove o bypass que pulava thumbshots em Wayland.
+	# - get_monitored()/get_assisted(): wayvnc + socat como "conexao
+	#   reversa" quando $WAYLAND_DISPLAY esta definido no cliente.
+	# - Wayland puro (sem Xwayland/xprop): PIDs em arquivo em
+	#   $XDG_RUNTIME_DIR/epoptes-client/ e ping() testando o socket do
+	#   compositor. Em X11 nada muda.
+	# - gui.py: fix Python 3.14 (modulo "pipes" removido, virou "shlex").
+	# grim, wayvnc e socat rodam no CLIENTE, nao aqui.
+	patch -p1 < "$srcdir/voidbr-epoptes-servidor.patch"
+}
+
+package() {
+	cd "${srcdir}/${pkgname}"
+	# Modelo Chili (chili-xfce-config): tudo vai para /usr/share/${pkgname}
+	# no pacote e o pkgbuild.install copia para / no post_install
+	# (sh_copy_user_etc_usr_opt_files do pkgbuildlib.sh).
+	install -dm755 "${pkgdir}/usr/share/${pkgname}"
+	local dirs=("usr" "etc" "opt")
+	for dir in "${dirs[@]}"; do
+		if [ -d "${srcdir}/${pkgname}/${dir}" ]; then
+			cp -a "${srcdir}/${pkgname}/${dir}" "${pkgdir}/usr/share/${pkgname}/"
+		fi
+	done
+
+	local stage="${pkgdir}/usr/share/${pkgname}"
+	# etc/sv e do runit (Void); no Arch o servico vem das units do systemd.
+	rm -rf "${stage}/etc/sv"
+	# etc/default fica como arquivo do pacman (backup=), fora da copia do
+	# post_install, para o upgrade nao sobrescrever a configuracao local.
+	rm -rf "${stage}/etc/default"
+	install -Dm644 "etc/default/epoptes" "${pkgdir}/etc/default/epoptes"
+	find "${stage}" -type d -name __pycache__ -prune -exec rm -rf {} +
+
+	# Install license file if present
+	if [ -f "LICENSE" ]; then
+		install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+	fi
+
+	# Install documentation if present
+	if [ -f "README.md" ]; then
+		install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+	fi
+}
