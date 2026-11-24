@@ -1,3 +1,66 @@
+diff --git a/usr/bin/epoptes b/usr/bin/epoptes
+index ac7b570..70dc818 100755
+--- a/usr/bin/epoptes
++++ b/usr/bin/epoptes
+@@ -75,6 +75,48 @@ def need_sg_relaunch():
+     return True
+ 
+ 
++def need_relogin():
++    """VoidBR/Chili patch: o usuario ja esta no grupo do socket em
++    /etc/group, mas a sessao atual comecou antes disso (os grupos de um
++    processo sao definidos no login) e o sg nao resolveu - no Arch nem
++    existe /usr/bin/sg. Sem este aviso, epoptes_socket() nao enxerga o
++    socket dentro de /run/epoptes (2770 root:epoptes), cai no tunel SSH
++    para o host "server" e falha com um erro confuso."""
++    if not os.path.isdir(config.system['DIR']):
++        return False
++    socket = config.system['DIR'] + '/epoptes.socket'
++    if os.access(socket, os.W_OK):
++        return False
++    try:
++        group = grp.getgrnam(config.system['SOCKET_GROUP'])
++    except KeyError:
++        return False
++    if getpass.getuser() not in group.gr_mem:
++        return False
++    if group.gr_gid in os.getgroups():
++        return False
++    return True
++
++
++def relogin_dialog():
++    """VoidBR/Chili patch: explica que e preciso iniciar uma sessao nova."""
++    group = config.system['SOCKET_GROUP']
++    msg = ("O usuário <b>%s</b> já está no grupo <b>%s</b>, mas esta "
++           "sessão foi iniciada antes disso e ainda não tem o grupo.\n\n"
++           "Encerre a sessão e entre novamente para usar o Epoptes.\n\n"
++           "Para usar agora sem sair, rode num terminal:\n"
++           "<tt>newgrp %s</tt>\n<tt>epoptes &amp;</tt>") % \
++        (getpass.getuser(), group, group)
++    LOG.w("User is in group %s but this session doesn't have it yet; "
++          "log out and back in, or run: newgrp %s" % (group, group))
++    dlg = Gtk.MessageDialog(type=Gtk.MessageType.WARNING,
++                            buttons=Gtk.ButtonsType.OK)
++    dlg.set_markup(msg)
++    dlg.set_title('Epoptes')
++    dlg.run()
++    dlg.destroy()
++
++
+ def gui_ip():
+     """Return the IP that the GUI uses to contact epoptes server.
+     It's constant as SSH will stay up for socket forwarding to work.
+@@ -146,6 +188,9 @@ def main():
+ 
+     if need_sg_relaunch():
+         sys.exit(0)
++    if need_relogin():
++        relogin_dialog()
++        sys.exit(1)
+ 
+     path = os.path.expanduser('~/.config')
+     if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 index 720c958..381eec1 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py

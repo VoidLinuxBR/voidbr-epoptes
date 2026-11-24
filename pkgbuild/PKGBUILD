@@ -51,7 +51,7 @@ source=(
 )
 sha256sums=(
 	'SKIP'
-	'8936f7917457418dbee1b6eb9075e33e1b304e783087e3e09b9228baf0a59d08'
+	'9eddc472abf419c12b114e767d938855a770a9889386cc0440558ee2de739d80'
 )
 
 pkgver() {
@@ -70,6 +70,9 @@ prepare() {
 	# - Wayland puro (sem Xwayland/xprop): PIDs em arquivo em
 	#   $XDG_RUNTIME_DIR/epoptes-client/ e ping() testando o socket do
 	#   compositor. Em X11 nada muda.
+	# - usr/bin/epoptes: se o usuario ja esta no grupo epoptes mas a sessao
+	#   comecou antes disso (e o sg nao resolve - no Arch nem existe), mostra
+	#   aviso para encerrar a sessao, em vez de cair no tunel SSH com erro.
 	# - gui.py: fix Python 3.14 (modulo "pipes" removido, virou "shlex").
 	# grim, wayvnc e socat rodam no CLIENTE, nao aqui.
 	patch -p1 < "$srcdir/voidbr-epoptes-servidor.patch"
