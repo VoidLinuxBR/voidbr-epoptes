@@ -105,6 +105,8 @@ post_install() {
   sh_start_epoptes
   if ! $IS_UPGRADE; then
     msg "Encerre a sessão e entre novamente para valer o grupo 'epoptes'."
+    msg "Se não bastar (no GNOME e em outros ambientes com systemd, a sessão"
+    msg "pode reaproveitar os grupos antigos), reinicie o computador."
   fi
 
   sh_finish

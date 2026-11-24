@@ -1,8 +1,8 @@
 diff --git a/usr/bin/epoptes b/usr/bin/epoptes
-index ac7b570..70dc818 100755
+index ac7b570..848abb8 100755
 --- a/usr/bin/epoptes
 +++ b/usr/bin/epoptes
-@@ -75,6 +75,48 @@ def need_sg_relaunch():
+@@ -75,6 +75,52 @@ def need_sg_relaunch():
      return True
  
  
@@ -34,12 +34,16 @@ index ac7b570..70dc818 100755
 +    group = config.system['SOCKET_GROUP']
 +    msg = ("O usuário <b>%s</b> já está no grupo <b>%s</b>, mas esta "
 +           "sessão foi iniciada antes disso e ainda não tem o grupo.\n\n"
-+           "Encerre a sessão e entre novamente para usar o Epoptes.\n\n"
++           "Encerre a sessão e entre novamente para usar o Epoptes. "
++           "Se isso não bastar (no GNOME e em outros ambientes com systemd, "
++           "a sessão pode reaproveitar os grupos antigos), reinicie o "
++           "computador.\n\n"
 +           "Para usar agora sem sair, rode num terminal:\n"
 +           "<tt>newgrp %s</tt>\n<tt>epoptes &amp;</tt>") % \
 +        (getpass.getuser(), group, group)
 +    LOG.w("User is in group %s but this session doesn't have it yet; "
-+          "log out and back in, or run: newgrp %s" % (group, group))
++          "log out and back in (or reboot, if the session reuses the old "
++          "groups), or run: newgrp %s" % (group, group))
 +    dlg = Gtk.MessageDialog(type=Gtk.MessageType.WARNING,
 +                            buttons=Gtk.ButtonsType.OK)
 +    dlg.set_markup(msg)
@@ -51,7 +55,7 @@ index ac7b570..70dc818 100755
  def gui_ip():
      """Return the IP that the GUI uses to contact epoptes server.
      It's constant as SSH will stay up for socket forwarding to work.
-@@ -146,6 +188,9 @@ def main():
+@@ -146,6 +192,9 @@ def main():
  
      if need_sg_relaunch():
          sys.exit(0)
