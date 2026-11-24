@@ -8,7 +8,7 @@ declare IS_UPGRADE=false
 declare IS_DBLOCK=false
 declare IS_METAPKG=false
 declare IS_SKEL=false
-declare pkgname=voidbr-epoptes
+declare pkgname=chili-epoptes
 declare servicesToEnable=(epoptes)
 declare servicesToDisable=()
 

@@ -1,11 +1,13 @@
 # Maintainer: Vilmar Catafesta <vcatafesta@gmail.com>
 
-pkgname=voidbr-epoptes
+pkgname=chili-epoptes
+# o repositorio no GitHub continua com o nome voidbr-*
+_reponame=voidbr-epoptes
 pkgver=20261124.0237
 pkgrel=1
 pkgdesc='An opensource computer lab management and monitoring tool (com suporte a Wayland nos clientes: thumbshots e observar/assistir)'
 arch=(any)
-url="https://github.com/voidlinuxbr/$pkgname"
+url="https://github.com/voidlinuxbr/${_reponame}"
 license=(GPL-3.0-or-later)
 depends=(
 	gobject-introspection
@@ -44,7 +46,7 @@ fi
 # O .patch e o mesmo do pkgfile/ (Void): aqui e um link simbolico para
 # ../pkgfile/voidbr-epoptes-servidor.patch, para manter uma unica copia.
 source=(
-	"git+$url.git"
+	"${pkgname}::git+${url}.git"
 	"voidbr-epoptes-servidor.patch"
 )
 sha256sums=(
