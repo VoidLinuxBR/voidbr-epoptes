@@ -15,7 +15,7 @@ license=(GPL3)
 arch=(any)
 sha256sums=(
 	'SKIP'
-	'18ba7eb7ce43b38a6f1e61a7974f277ca2a96588629aba32609f8c82d1c1ca14'
+	'8936f7917457418dbee1b6eb9075e33e1b304e783087e3e09b9228baf0a59d08'
 )
 depends=(gobject-introspection
 	gtk+3
@@ -56,6 +56,9 @@ prepare() {
 	#   wlroots do lado do cliente por enquanto.
 	# Os binarios (grim, wayvnc, socat) rodam no CLIENTE, nao aqui -
 	# esse pacote nao precisa deles como dependencia.
+	# - Wayland puro (sem Xwayland/xprop): PIDs guardados em arquivo em
+	#   $XDG_RUNTIME_DIR/epoptes-client/ e ping() testando o socket do
+	#   compositor, em vez de depender do X. Em X11 nada muda.
 	# gui.py: fix Python 3.14 (modulo "pipes" removido, virou "shlex").
 	patch -p1 < "${srcdir}/voidbr-epoptes-servidor.patch"
 }
