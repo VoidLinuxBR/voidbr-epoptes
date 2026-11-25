@@ -15,7 +15,7 @@ license=(GPL3)
 arch=(any)
 sha256sums=(
 	'SKIP'
-	'0d91e76d44f6224459b14ff9a411469c11044faece41731c571cace3821f4e5d'
+	'5558a001feebd5ed96f0a2da643349a0ed43b1208e78867a3ad9c2efb887bb51'
 )
 depends=(gobject-introspection
 	gtk+3
@@ -62,6 +62,9 @@ prepare() {
 	# usr/bin/epoptes: se o usuario ja esta no grupo epoptes mas a sessao
 	#   comecou antes disso (e o sg nao resolve - no Arch nem existe), mostra
 	#   aviso para encerrar a sessao, em vez de cair no tunel SSH com erro.
+	# on_signal(): sob runit o shell do root nao se relanca sozinho (o runsv
+	#   ja reinicia); antes, cada sv stop/restart deixava um epoptes-client
+	#   root orfao, fora do runit.
 	# gui.py: fix Python 3.14 (modulo "pipes" removido, virou "shlex").
 	patch -p1 < "${srcdir}/voidbr-epoptes-servidor.patch"
 }

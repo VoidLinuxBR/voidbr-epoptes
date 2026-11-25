@@ -182,7 +182,7 @@ index 720c958..381eec1 100644
          if (clients != [] or handles != []) and warning != '':
              if not self.confirmation_dialog(warning):
 diff --git a/usr/share/epoptes/client-functions b/usr/share/epoptes/client-functions
-index d54ba3b..2f58324 100644
+index d54ba3b..c817970 100644
 --- a/usr/share/epoptes/client-functions
 +++ b/usr/share/epoptes/client-functions
 @@ -6,6 +6,71 @@
@@ -257,7 +257,22 @@ index d54ba3b..2f58324 100644
  
  # Dash handles signals a bit differently from bash.
  # We need to trap both 0 and 15 otherwise the trap function isn't called at all.
-@@ -60,16 +125,51 @@ ensure_display() {
+@@ -20,8 +85,13 @@ on_signal() {
+ 
+     code="$?"
+     trap - 0 15
++    # VoidBR patch: sob runit, quem reinicia o servico do root e o runsv. Se
++    # o shell tambem se relancasse, cada sv stop/restart (ou vservice rm)
++    # deixaria um epoptes-client root orfao, fora do runit.
++    if [ "$runit_supervised" = true ]; then
++        echo "epoptes-client got signal: $1, leaving the restart to runit" >&5
+     # Don't relaunch if the system is shutting down
+-    if [ "$UID" -eq 0 ] && [ -d /run/systemd/system ] && [ -x /bin/systemctl ] &&
++    elif [ "$UID" -eq 0 ] && [ -d /run/systemd/system ] && [ -x /bin/systemctl ] &&
+         systemctl list-jobs | grep -q 'shutdown.target[[:space:]]*start'; then
+         echo "epoptes-client got signal: $1, but system is shutting down" >&5
+     else
+@@ -60,16 +130,51 @@ ensure_display() {
      fi
  }
  
@@ -309,7 +324,7 @@ index d54ba3b..2f58324 100644
      xprop -root -remove "$1"
  }
  
-@@ -139,14 +239,32 @@ info() {
+@@ -139,14 +244,32 @@ info() {
          else
              server_ip=$(getent hosts "$SERVER" | awk '{ print $1; exit }')
              server_ip=${server_ip:-$SERVER}
@@ -348,7 +363,7 @@ index d54ba3b..2f58324 100644
              MAC=$(main_mac)
              MAC=${MAC%% *}
              test -n "$MAC" || die "Empty MAC"
-@@ -260,9 +378,11 @@ shutdown() {
+@@ -260,9 +383,11 @@ shutdown() {
  # $2 = thumbshot height.
  thumbshot() {
      # TODO: remove compatibility fallback after a few versions
@@ -361,7 +376,7 @@ index d54ba3b..2f58324 100644
      if [ -f "./thumbshot.py" ]; then
          executable=./thumbshot.py
      else
-@@ -378,11 +498,103 @@ message() {
+@@ -378,11 +503,103 @@ message() {
      fi
  }
  
@@ -466,7 +481,7 @@ index d54ba3b..2f58324 100644
  }
  
  # Connect to the server to get assistance.
-@@ -390,7 +602,11 @@ get_monitored() {
+@@ -390,7 +607,11 @@ get_monitored() {
  # $1 = host:port.
  # $2 = grab keyboard and mouse.
  get_assisted() {
@@ -479,7 +494,7 @@ index d54ba3b..2f58324 100644
  }
  
  # Deactivate the screensaver, in order for the users to watch a broadcast.
-@@ -468,7 +684,7 @@ receive_broadcast() {
+@@ -468,7 +689,7 @@ receive_broadcast() {
  # The vnc clients should automatically exit when the server is killed.
  # Unfortunately, that isn't always true, so try to kill them anyway.
  stop_receptions() {
@@ -488,7 +503,7 @@ index d54ba3b..2f58324 100644
  
      unset receiving_broadcast
      ensure_display
-@@ -477,6 +693,11 @@ stop_receptions() {
+@@ -477,6 +698,11 @@ stop_receptions() {
          kill "$pid"
          xprop_unset EPOPTES_VNCVIEWER_PID
      fi
@@ -500,7 +515,7 @@ index d54ba3b..2f58324 100644
  }
  
  # Open a root terminal inside the X session.
-@@ -507,7 +728,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
+@@ -507,7 +733,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
  # exit automatically, so tell it to exit as soon as X is unavailable.
  ping() {
      if [ "$UID" -gt 0 ]; then
@@ -515,3 +530,21 @@ index d54ba3b..2f58324 100644
      fi
      if [ "$receiving_broadcast" = true ]; then
          reset_screensaver
+@@ -533,6 +765,17 @@ info
+ # Prevent dbus from getting autolaunched (issue #66)
+ export "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/dev/null}"
+ 
++# VoidBR patch: runit_supervised - descobre, enquanto o socat ainda esta
++# vivo, se ele e filho do runsv (servico runit do root). Calculado aqui, ao
++# carregar, porque no on_signal o socat ja pode ter morrido.
++runit_supervised=false
++if [ "$UID" -eq 0 ]; then
++    _gp=$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')
++    if [ -n "$_gp" ] && [ "$(ps -o comm= -p "$_gp" 2>/dev/null)" = runsv ]; then
++        runit_supervised=true
++    fi
++fi
++
+ for i in 0 15; do
+     trap "on_signal $i" $i
+ done
