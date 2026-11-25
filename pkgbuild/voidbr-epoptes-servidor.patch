@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..381eec1 100644
+index 720c958..02190d3 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,19 @@
+@@ -4,10 +4,33 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -82,15 +82,62 @@ index 720c958..381eec1 100644
 +     clique). Ver comentario na propria funcao para o detalhe do bug
 +     que isso corrige (vncviewer -listen que fica "vivo" mas para de
 +     aceitar novas sessoes RFB).
++  3. Selos de estado e dica (tooltip) em cada cliente, e o item
++     "Diagnosticar cliente..." no menu Clientes. Os selos comparam as
++     conexoes de cada maquina (root e sessao) com os campos novos do
++     info (session=, desktop=) e com os usuarios logados que a conexao
++     do root informa (graphical_users, perguntado a cada 20 s). O
++     diagnostico roda o epoptes-client --check no cliente (diagnose).
++     As funcoes do lado do cliente ficam no client-functions.
++  4. Miniatura que falha mostra o motivo (selo e dica), vindo do
++     cliente como VBR_THUMBSHOT_ERROR=<motivo>.
++  5. Observar/Assistir avisa antes, e deixa de fora, os clientes que
++     nao tem como atender (GNOME/KDE no Wayland, ou sem wayvnc/x11vnc).
++  6. Item "Reconectar sessao": refaz a conexao da sessao (reconnect);
++     numa conexao duplicada, so encerra a escolhida (reconnect drop).
  """
  from distutils.version import LooseVersion
  import os
 -import pipes
++import re
 +import shlex
  import random
  import socket
  import string
-@@ -276,39 +285,52 @@ class EpoptesGui(object):
+@@ -79,6 +102,11 @@ class EpoptesGui(object):
+         self.vncserver_pwd = None
+         self.vncviewer = None
+         self.vncviewer_port = None
++        # VoidBR patch: o info de cada conexao (handle -> dict) e os usuarios
++        # logados que a conexao do root de cada maquina informa.
++        self.conn_info = {}
++        self.sys_gusers = {}
++        self.thumb_errors = {}
+ 
+         self.builder = Gtk.Builder()
+         self.builder.add_from_file('epoptes.ui')
+@@ -98,7 +126,11 @@ class EpoptesGui(object):
+         self.set_labels_order(1, 0, None)
+         self.icv_clients.set_model(self.cstore)
+         self.icv_clients.set_pixbuf_column(C_PIXBUF)
+-        self.icv_clients.set_text_column(C_LABEL)
++        # VoidBR patch: markup, para o selo de estado embaixo do nome.
++        self.icv_clients.set_markup_column(C_LABEL)
++        self.icv_clients.set_has_tooltip(True)
++        self.icv_clients.connect(
++            'query-tooltip', self.on_icv_clients_query_tooltip)
+         self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
+         self.on_icv_clients_selection_changed(None)
+         self.icv_clients.enable_model_drag_source(
+@@ -167,6 +199,7 @@ class EpoptesGui(object):
+         mitem.set_active(True)
+         self.get('cmi_show_real_names').set_active(self.show_real_names)
+         self.mainwin.set_sensitive(False)
++        GLib.timeout_add_seconds(20, self.poll_graphical_users)
+ 
+     def save_settings(self):
+         """Helper function for on_imi_file_quit_activate."""
+@@ -276,38 +309,76 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -123,6 +170,26 @@ index 720c958..381eec1 100644
 -                # A generic vncviewer, e.g. tigervnc on Arch/Fedora/SUSE
 -                scmd = ['vncviewer', '-listen', str(self.vncviewer_port)]
 -            self.vncviewer = subprocess.Popen(scmd)
++        # VoidBR patch: avisa antes, e deixa de fora, quem nao tem como
++        # atender, em vez de abrir um visualizador que nunca recebe nada.
++        targets = self.get_selected_clients() or list(self.cstore)
++        bad = []
++        for row in targets:
++            reason = self.observe_unsupported(row)
++            if reason and (self.row_name(row), reason) not in bad:
++                bad.append((self.row_name(row), reason))
++        good = [row for row in targets if not self.observe_unsupported(row)]
++        if bad:
++            names = '\n'.join('\u2022 %s: %s' % x for x in bad)
++            if not good:
++                self.warning_dialog(
++                    'Observar/Assistir n\u00e3o funciona %s:\n\n%s' % (
++                        'neste cliente' if len(bad) == 1
++                        else 'nestes clientes', names))
++                return
++            self.warning_dialog(
++                'Observar/Assistir n\u00e3o funciona nestes clientes, que '
++                'ficam de fora:\n\n' + names)
 +        # VoidBR fix: o TigerVNC (-listen) as vezes fica "vivo" (processo
 +        # nao sai sozinho) mas para de aceitar novas sessoes RFB depois
 +        # que a primeira termina. Confiar em self.vncviewer.poll() pra
@@ -166,13 +233,403 @@ index 720c958..381eec1 100644
 +        self.vncviewer = subprocess.Popen(scmd)
  
          # And, tell the clients to connect to the server
-         self.exec_on_selected_clients(' '.join([cmd, '"${GUI_IP}:%d"' % self.vncviewer_port] + list(args)))
- 
+-        self.exec_on_selected_clients(' '.join([cmd, '"${GUI_IP}:%d"' % self.vncviewer_port] + list(args)))
++        command = ' '.join(
++            [cmd, '"${GUI_IP}:%d"' % self.vncviewer_port] + list(args))
++        if bad:
++            self.exec_on_clients(command, good)
++        else:
++            self.exec_on_selected_clients(command)
 +
+ 
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-         self.reverse_connection('get_monitored')
-@@ -1059,7 +1081,7 @@ class EpoptesGui(object):
+@@ -629,6 +700,9 @@ class EpoptesGui(object):
+             single_client = True
+         self.get('imi_clients_information').set_sensitive(single_client)
+         self.get('tlb_clients_information').set_sensitive(single_client)
++        self.get('imi_clients_diagnose').set_sensitive(single_client)
++        self.get('imi_clients_reconnect').set_sensitive(
++            single_client and bool(selected[0][C_SESSION_HANDLE]))
+ 
+         if selected:
+             self.get('mni_add_to_group').set_sensitive(True)
+@@ -764,6 +838,9 @@ class EpoptesGui(object):
+                 client_.set_offline()
+ 
+         LOG.w("Disconnect from", handle)
++        self.conn_info.pop(handle, None)
++        self.sys_gusers.pop(handle, None)
++        self.thumb_errors.pop(handle, None)
+         client = None
+         for client in structs.clients:
+             if client.hsystem == handle:
+@@ -813,12 +890,12 @@ class EpoptesGui(object):
+         if client.users:
+             for hsession, user in client.users.items():
+                 self.cstore.append(
+-                    [self.calculate_label(client, user[label]),
++                    [self.label_markup(client, user[label], hsession),
+                      self.imagetypes[client.type], client, hsession])
+                 self.ask_thumbshot(hsession, True)
+         else:
+             self.cstore.append(
+-                [self.calculate_label(client),
++                [self.label_markup(client),
+                  self.imagetypes[client.type], client, ''])
+ 
+     def fill_icon_view(self, group, keep_selection=False):
+@@ -923,9 +1000,11 @@ class EpoptesGui(object):
+ 
+         # Update/fill the client information
+         client.type, client.hostname = type_, host
++        self.conn_info[handle] = info
+         if uid == 0:
+             # This is a root epoptes-client
+             client.hsystem = handle
++            self.ask_graphical_users(handle)
+         else:
+             # This is a user epoptes-client
+             client.add_user(user, name, handle)
+@@ -949,7 +1028,319 @@ class EpoptesGui(object):
+             user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
+         else:
+             user = ''
+-        row[C_LABEL] = self.calculate_label(inst, user)
++        row[C_LABEL] = self.label_markup(inst, user, row[C_SESSION_HANDLE])
++
++    # VoidBR patch: selos de estado, dica e "Diagnosticar cliente".
++    @staticmethod
++    def session_desc(info):
++        """Return e.g. "Wayland - Hyprland" from the info of a connection."""
++        session = {'wayland': 'Wayland', 'x11': 'X11'}.get(
++            info.get('session', ''), '')
++        # XDG_CURRENT_DESKTOP pode ser uma lista, como "ubuntu:GNOME"
++        desktop = info.get('desktop', '').split(':')[-1]
++        return ' \u00b7 '.join([x for x in (session, desktop) if x])
++
++    def client_state(self, client, hsession=''):
++        """Return (level, text, hint) for an iconview entry.
++        level is 'warn' for a problem, 'info' otherwise."""
++        if hsession:
++            uname = client.users.get(hsession, {}).get('uname', '')
++            dups = len([1 for u in client.users.values()
++                        if u['uname'] == uname])
++            if dups > 1:
++                return ('warn', 'Sess\u00e3o duplicada \u00d7%d' % dups,
++                        'H\u00e1 %d conex\u00f5es de sess\u00e3o de %s. Mantenha '
++                        'a mais antiga e encerre as outras em Reconectar '
++                        'sess\u00e3o.' % (dups, uname))
++            if hsession in self.thumb_errors:
++                return ('warn', 'Miniatura falhou',
++                        'Motivo no cliente: %s' % self.thumb_errors[hsession])
++            if not client.hsystem:
++                return ('warn', 'Sem conex\u00e3o do root',
++                        'O servi\u00e7o epoptes-client da m\u00e1quina '
++                        'n\u00e3o est\u00e1 conectado: desligar, reiniciar e '
++                        'o terminal de root n\u00e3o funcionam. Use '
++                        'Diagnosticar cliente.')
++            return ('info', self.session_desc(
++                self.conn_info.get(hsession, {})), '')
++        if not client.hsystem:
++            return ('info', '', '')
++        connected = set(u['uname'] for u in client.users.values())
++        missing = [u for u in self.sys_gusers.get(client.hsystem, [])
++                   if u not in connected]
++        if missing:
++            return ('warn', 'Sess\u00e3o n\u00e3o conectou (%s)'
++                    % ', '.join(missing),
++                    'O usu\u00e1rio entrou, mas a conex\u00e3o da sess\u00e3o '
++                    'n\u00e3o veio: grupo epoptes, autostart ou certificado. '
++                    'Use Diagnosticar cliente.')
++        return ('info', 'Sem usu\u00e1rio logado', '')
++
++    def row_name(self, row):
++        """Return e.g. "lab-05 (maria)" for an iconview entry."""
++        client, hsession = row[C_INSTANCE], row[C_SESSION_HANDLE]
++        user = client.users.get(hsession, {}).get('uname', '') \
++            if hsession else ''
++        return client.get_name() + (' (%s)' % user if user else '')
++
++    def observe_unsupported(self, row):
++        """Return why Observe/Assist can't work on an entry, or ''."""
++        hsession = row[C_SESSION_HANDLE]
++        if not hsession:
++            return ''
++        info = self.conn_info.get(hsession, {})
++        session = info.get('session', '')
++        desktop = info.get('desktop', '').upper()
++        # Sem o campo vnc= (servidor antigo), nao da para saber
++        vnc = info.get('vnc')
++        vnc = vnc.split(',') if vnc is not None else None
++        if session == 'wayland':
++            if 'GNOME' in desktop or 'KDE' in desktop or 'PLASMA' in desktop:
++                return ('GNOME e KDE no Wayland ainda n\u00e3o t\u00eam servidor '
++                        'VNC compat\u00edvel (o wayvnc funciona em Hyprland, '
++                        'Sway e outros wlroots)')
++            if vnc is not None and 'wayvnc' not in vnc:
++                return 'falta o pacote wayvnc no cliente'
++        elif session == 'x11' and vnc is not None and 'x11vnc' not in vnc:
++            return 'falta o pacote x11vnc no cliente'
++        return ''
++
++    def session_position(self, client, hsession):
++        """Return (position, total) of a session among the user's sessions,
++        in connection order (the oldest first)."""
++        uname = client.users.get(hsession, {}).get('uname', '')
++        same = [h for h, u in client.users.items() if u['uname'] == uname]
++        return same.index(hsession) + 1, len(same)
++
++    def label_markup(self, client, username='', hsession=''):
++        """Return the iconview label, with the state badge below it."""
++        markup = GLib.markup_escape_text(
++            self.calculate_label(client, username))
++        level, text, _hint = self.client_state(client, hsession)
++        if text:
++            if level == 'warn':
++                markup += '\n<span size="small" foreground="#d9480f">' \
++                          '\u26a0 %s</span>' % GLib.markup_escape_text(text)
++            else:
++                markup += '\n<span size="small" foreground="#808080">' \
++                          '%s</span>' % GLib.markup_escape_text(text)
++        return markup
++
++    def refresh_labels(self):
++        """Recalculate the labels and badges of all the iconview entries."""
++        for row in self.cstore:
++            self.set_label(row)
++
++    def tooltip_markup(self, client, hsession=''):
++        """Return the tooltip markup for an iconview entry."""
++        esc = GLib.markup_escape_text
++        sysinfo = self.conn_info.get(client.hsystem, {})
++        uinfo = self.conn_info.get(hsession, {}) if hsession else {}
++        info = uinfo or sysinfo
++        lines = ['<b>%s</b>' % esc(client.get_name())]
++        details = []
++        if info.get('ip'):
++            details.append('IP ' + info['ip'])
++        if client.mac:
++            details.append('MAC ' + client.mac)
++        if details:
++            lines.append(esc(' \u00b7 '.join(details)))
++        if info.get('version'):
++            lines.append(esc('Cliente epoptes %s' % info['version']))
++        lines.append('Conex\u00e3o do root: ' + (
++            'conectada' if client.hsystem else 'ausente'))
++        if hsession:
++            uname = client.users.get(hsession, {}).get('uname', '')
++            desc = self.session_desc(uinfo)
++            lines.append(esc('Sess\u00e3o: %s%s' % (
++                uname, ' (%s)' % desc if desc else '')))
++            pos, total = self.session_position(client, hsession)
++            if total > 1:
++                lines.append(esc('Conex\u00e3o %d de %d (%s)' % (
++                    pos, total, 'a mais antiga, mantenha esta' if pos == 1
++                    else 'pode encerrar em Reconectar sess\u00e3o')))
++            reason = self.observe_unsupported(
++                {C_INSTANCE: client, C_SESSION_HANDLE: hsession})
++            if reason:
++                lines.append(esc('Observar/Assistir: ' + reason))
++        elif client.hsystem:
++            lines.append('Sess\u00e3o: nenhuma conectada')
++            gusers = self.sys_gusers.get(client.hsystem, [])
++            if gusers:
++                lines.append(esc('Usu\u00e1rios logados: ' + ', '.join(gusers)))
++        level, text, hint = self.client_state(client, hsession)
++        if level == 'warn':
++            lines.append('<span foreground="#d9480f"><b>\u26a0 %s</b></span>'
++                         % esc(text))
++            if hint:
++                lines.append(esc(hint))
++        return '\n'.join(lines)
++
++    def on_icv_clients_query_tooltip(self, widget, x, y, keyboard_mode,
++                                     tooltip):
++        """Handle icv_clients.query-tooltip event."""
++        ctx = widget.get_tooltip_context(x, y, keyboard_mode)
++        if not ctx[0]:
++            return False
++        model, path = ctx[3], ctx[4]
++        row = model[path]
++        tooltip.set_markup(self.tooltip_markup(
++            row[C_INSTANCE], row[C_SESSION_HANDLE]))
++        widget.set_tooltip_item(tooltip, path)
++        return True
++
++    def poll_graphical_users(self):
++        """Ask the root connections for the logged in users, periodically."""
++        if self.daemon:
++            for client in structs.clients:
++                if client.hsystem:
++                    self.ask_graphical_users(client.hsystem)
++        return True
++
++    def ask_graphical_users(self, handle):
++        """Ask a root connection which users have a graphical session."""
++        dfr = self.daemon_command(handle, 'graphical_users')
++        dfr.addCallback(
++            lambda r, h=handle: self.got_graphical_users(h, r.decode()))
++        dfr.addErrback(lambda err, h=handle: LOG.d(
++            "graphical_users failed on %s: %s" % (h, err)))
++
++    def got_graphical_users(self, handle, reply):
++        """Callback after running `graphical_users` on a client."""
++        users = [u for u in reply.strip().split(',')
++                 if re.match(r'^[A-Za-z0-9_][A-Za-z0-9_.-]*\$?$', u)]
++        if self.sys_gusers.get(handle) != users:
++            self.sys_gusers[handle] = users
++            self.refresh_labels()
++
++    def on_imi_clients_reconnect_activate(self, _widget):
++        """Handle imi_clients_reconnect.activate event."""
++        rows = self.get_selected_clients()
++        if len(rows) != 1 or not rows[0][C_SESSION_HANDLE]:
++            return
++        client, hsession = rows[0][C_INSTANCE], rows[0][C_SESSION_HANDLE]
++        name = self.row_name(rows[0])
++        pos, total = self.session_position(client, hsession)
++        if total > 1:
++            if pos == 1:
++                text = ('Esta \u00e9 a conex\u00e3o mais antiga de %s, a que '
++                        'deve ficar. Encerrar mesmo assim, sem abrir outra?'
++                        % name)
++            else:
++                text = ('Encerrar esta conex\u00e3o duplicada de %s (%d de '
++                        '%d), sem abrir outra?' % (name, pos, total))
++            command = 'reconnect drop'
++        else:
++            text = ('Reconectar a sess\u00e3o de %s? A m\u00e1quina some da '
++                    'lista por alguns segundos e volta.' % name)
++            command = 'reconnect'
++        if not self.confirmation_dialog(text):
++            return
++        # O shell do cliente morre sem responder; o erro da conexao fechada
++        # nao interessa.
++        self.daemon_command(hsession, command).addErrback(lambda err: None)
++
++    def on_imi_clients_diagnose_activate(self, _widget):
++        """Handle imi_clients_diagnose.activate event."""
++        rows = self.get_selected_clients()
++        if len(rows) != 1:
++            return
++        client, hsession = rows[0][C_INSTANCE], rows[0][C_SESSION_HANDLE]
++        # A conexao da sessao testa tambem a miniatura; sem ela, a do root
++        handle = hsession or client.hsystem
++        if not handle:
++            self.warning_dialog(
++                'A m\u00e1quina %s est\u00e1 desligada ou sem conex\u00e3o '
++                'com o servidor.' % client.get_name())
++            return
++        if hsession:
++            who = client.users.get(hsession, {}).get('uname', '')
++        else:
++            who = 'root'
++        self.diagnose_dialog(handle, '%s (%s)' % (client.get_name(), who))
++
++    def diagnose_dialog(self, handle, name):
++        """Show the epoptes-client --check output of a client."""
++        dlg = Gtk.Dialog(title='Diagn\u00f3stico \u2014 ' + name,
++                         transient_for=self.mainwin)
++        dlg.set_default_size(760, 440)
++        btn_again = dlg.add_button('Rodar de novo', 1)
++        dlg.add_button('Copiar', 2)
++        dlg.add_button('Fechar', Gtk.ResponseType.CLOSE)
++        buf = Gtk.TextBuffer()
++        for tag, props in (
++                ('ok', {'foreground': '#2b8a3e', 'weight': 700}),
++                ('fail', {'foreground': '#c92a2a', 'weight': 700}),
++                ('info', {'foreground': '#1c7ed6', 'weight': 700}),
++                ('hint', {'foreground': '#b35c00'}),
++                ('bold', {'weight': 700}),
++                ('dim', {'foreground': '#808080'})):
++            buf.create_tag(tag, **props)
++        view = Gtk.TextView(buffer=buf, editable=False, cursor_visible=False,
++                            monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR,
++                            left_margin=8, top_margin=8)
++        scw = Gtk.ScrolledWindow()
++        scw.add(view)
++        dlg.get_content_area().pack_start(scw, True, True, 0)
++        state = {'alive': True}
++
++        def fill(text):
++            if not state['alive']:
++                return
++            btn_again.set_sensitive(True)
++            buf.set_text('')
++            text = re.sub(r'\x1b\[[0-9;]*m', '', text).rstrip('\n')
++            for i, line in enumerate(text.split('\n')):
++                end = buf.get_end_iter()
++                if i:
++                    buf.insert(end, '\n')
++                    end = buf.get_end_iter()
++                match = re.match(r'^(\s*)(\[OK\]|\[FALHA\]|\[INFO\])(.*)$',
++                                 line)
++                if match:
++                    buf.insert(end, match.group(1))
++                    buf.insert_with_tags_by_name(
++                        buf.get_end_iter(), match.group(2),
++                        {'[OK]': 'ok', '[FALHA]': 'fail',
++                         '[INFO]': 'info'}[match.group(2)])
++                    buf.insert(buf.get_end_iter(), match.group(3))
++                elif line.lstrip().startswith('->'):
++                    buf.insert_with_tags_by_name(end, line, 'hint')
++                elif i == 0 or line.startswith('Tudo certo'):
++                    buf.insert_with_tags_by_name(
++                        end, line, 'ok' if line.startswith('Tudo') else 'bold')
++                elif 'problema(s) encontrado(s)' in line:
++                    buf.insert_with_tags_by_name(end, line, 'fail')
++                else:
++                    buf.insert(end, line)
++
++        def start():
++            btn_again.set_sensitive(False)
++            buf.set_text('')
++            buf.insert_with_tags_by_name(
++                buf.get_end_iter(),
++                'Rodando epoptes-client --check em %s...' % name, 'dim')
++            dfr = self.daemon_command(handle, 'diagnose')
++            dfr.addCallback(lambda r: fill(r.decode('utf-8', 'replace')))
++            dfr.addErrback(lambda err: fill(
++                '  [FALHA] sem resposta do cliente: %s'
++                % err.getErrorMessage()))
++
++        def on_response(_dlg, response):
++            if response == 1:
++                start()
++            elif response == 2:
++                Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(
++                    buf.get_text(buf.get_start_iter(), buf.get_end_iter(),
++                                 False), -1)
++            else:
++                state['alive'] = False
++                dlg.destroy()
++
++        dlg.connect('response', on_response)
++        dlg.connect('delete-event', lambda *_a: state.update(alive=False))
++        dlg.show_all()
++        start()
+ 
+     def calculate_label(self, client, username=''):
+         """Return the iconview label from a hostname/alias and a username,
+@@ -1012,6 +1403,16 @@ class EpoptesGui(object):
+                 LOG.d("I got a thumbshot from %s." % handle)
+                 if not reply:
+                     return
++                # VoidBR patch: a captura falhou no cliente, guarda o motivo
++                if b'VBR_THUMBSHOT_ERROR=' in reply:
++                    msg = reply.split(b'VBR_THUMBSHOT_ERROR=', 1)[1].decode(
++                        'utf-8', 'replace').strip().split('\n')[0]
++                    if self.thumb_errors.get(handle) != msg:
++                        self.thumb_errors[handle] = msg
++                        self.set_label(i)
++                    return
++                if self.thumb_errors.pop(handle, None) is not None:
++                    self.set_label(i)
+                 try:
+                     rowstride, size, pixels = reply.split(b'\n', 2)
+                     rowstride = int(rowstride)
+@@ -1059,7 +1460,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(
@@ -182,10 +639,10 @@ index 720c958..381eec1 100644
          if (clients != [] or handles != []) and warning != '':
              if not self.confirmation_dialog(warning):
 diff --git a/usr/share/epoptes/client-functions b/usr/share/epoptes/client-functions
-index d54ba3b..c817970 100644
+index d54ba3b..cf5ad23 100644
 --- a/usr/share/epoptes/client-functions
 +++ b/usr/share/epoptes/client-functions
-@@ -6,6 +6,71 @@
+@@ -6,6 +6,96 @@
  # Implements the client side of the epoptes communications protocol.
  # The daemon reads this file when it starts, and sends it to clients when they
  # connect. The clients actually source it and then wait for further commands.
@@ -253,11 +710,36 @@ index d54ba3b..c817970 100644
 +#    configuracao vazia propria (-C), para nao herdar senha/erros do
 +#    ~/.config/wayvnc/config do usuario. Com wayvnc >= 0.10 usa tambem
 +#    -e (--exit-on-disconnect), detectado pelo --help.
++#
++# 8. Para a interface do servidor (selos de estado e "Diagnosticar
++#    cliente"):
++#      info()            manda tambem session= (system/wayland/x11) e
++#                        desktop= ($XDG_CURRENT_DESKTOP).
++#      graphical_users() (nova) na conexao do root, lista os usuarios
++#                        com sessao grafica aberta na maquina - assim o
++#                        servidor sabe quando alguem logou mas a conexao
++#                        da sessao nao veio.
++#      diagnose()        (nova) roda o epoptes-client --check do cliente
++#                        e devolve a saida. Cliente sem --check recebe
++#                        so um aviso (sem o --check, o epoptes-client
++#                        trataria a opcao como nome de servidor e abriria
++#                        outra conexao).
++#      info()            manda tambem vnc= (wayvnc/x11vnc instalados),
++#                        para o servidor avisar antes do Observar/Assistir
++#                        quando o cliente nao tem como atender.
++#      thumbshot()       quando a captura falha, devolve uma linha
++#                        VBR_THUMBSHOT_ERROR=<motivo> em vez de nada, e o
++#                        servidor mostra o motivo no selo e na dica.
++#      reconnect()       (nova) refaz a conexao da sessao: sobe um
++#                        epoptes-client novo, desligado deste, e encerra o
++#                        shell atual com KILL, que nao dispara o
++#                        relancamento do on_signal. Com "drop", so encerra
++#                        (para conexoes duplicadas).
 +# ============================================================================
  
  # Dash handles signals a bit differently from bash.
  # We need to trap both 0 and 15 otherwise the trap function isn't called at all.
-@@ -20,8 +85,13 @@ on_signal() {
+@@ -20,8 +110,13 @@ on_signal() {
  
      code="$?"
      trap - 0 15
@@ -272,7 +754,7 @@ index d54ba3b..c817970 100644
          systemctl list-jobs | grep -q 'shutdown.target[[:space:]]*start'; then
          echo "epoptes-client got signal: $1, but system is shutting down" >&5
      else
-@@ -60,16 +130,51 @@ ensure_display() {
+@@ -60,16 +155,51 @@ ensure_display() {
      fi
  }
  
@@ -324,7 +806,7 @@ index d54ba3b..c817970 100644
      xprop -root -remove "$1"
  }
  
-@@ -139,14 +244,32 @@ info() {
+@@ -139,14 +269,32 @@ info() {
          else
              server_ip=$(getent hosts "$SERVER" | awk '{ print $1; exit }')
              server_ip=${server_ip:-$SERVER}
@@ -363,7 +845,106 @@ index d54ba3b..c817970 100644
              MAC=$(main_mac)
              MAC=${MAC%% *}
              test -n "$MAC" || die "Empty MAC"
-@@ -260,9 +383,11 @@ shutdown() {
+@@ -177,9 +325,98 @@ cpu=$CPU
+ ram=$RAM
+ vga=$VGA
+ os=$OS
++session=$(session_type)
++desktop=${XDG_CURRENT_DESKTOP:-$DESKTOP_SESSION}
++vnc=$(vnc_servers)
+ EOF
+ }
+ 
++# VoidBR patch: servidores VNC instalados, separados por virgula.
++vnc_servers() {
++    local v list
++
++    for v in wayvnc x11vnc; do
++        command -v "$v" >/dev/null 2>&1 && list="${list:+$list,}$v"
++    done
++    echo "$list"
++}
++
++# VoidBR patch: refaz a conexao da sessao, a pedido do servidor.
++# Parameters:
++# $1 = "drop" para so encerrar esta conexao, sem subir outra.
++reconnect() {
++    if [ "$UID" -eq 0 ]; then
++        echo "reconnect: so na conexao da sessao" >&5
++        return 0
++    fi
++    trap - 0 15
++    if [ "$1" != drop ]; then
++        echo "epoptes-client: reconectando a pedido do servidor" >&5
++        # Espera este shell morrer, para o epoptes-client novo nao ver a
++        # conexao antiga. O setsid desliga o novo deste shell.
++        (
++            sleep 2
++            if command -v setsid >/dev/null 2>&1; then
++                exec setsid epoptes-client $SERVER $PORT </dev/null >&5 2>&1
++            fi
++            exec epoptes-client $SERVER $PORT </dev/null >&5 2>&1
++        ) &
++    else
++        echo "epoptes-client: conexao encerrada a pedido do servidor" >&5
++    fi
++    kill -KILL $$
++}
++
++# VoidBR patch: tipo da conexao, para a interface do servidor.
++session_type() {
++    if [ "$UID" -eq 0 ]; then
++        echo system
++    elif [ -n "$WAYLAND_DISPLAY" ]; then
++        echo wayland
++    elif [ -n "$DISPLAY" ]; then
++        echo x11
++    else
++        echo "${XDG_SESSION_TYPE:-unknown}"
++    fi
++}
++
++# VoidBR patch: usuarios com sessao grafica aberta nesta maquina, separados
++# por virgula. So na conexao do root (precisa ler o environ de todos os
++# processos). Conta quem tem processo com DISPLAY/WAYLAND_DISPLAY e uid de
++# usuario comum (>= UID_MIN), o que deixa de fora o greeter (sddm, gdm...).
++graphical_users() {
++    local uid_min
++
++    test "$UID" -eq 0 || return 0
++    uid_min=$(awk '$1 == "UID_MIN" { print $2; exit }' /etc/login.defs 2>/dev/null)
++    grep -lsa 'DISPLAY=' /proc/[0-9]*/environ 2>/dev/null |
++        sed 's|/environ$||' | xargs -r stat -c '%u %U' 2>/dev/null |
++        awk -v min="${uid_min:-1000}" '$1 >= min && $1 < 65534 { print $2 }' |
++        sort -u | paste -sd ',' -
++}
++
++# VoidBR patch: "Diagnosticar cliente" da interface do servidor. Roda o
++# epoptes-client --check e devolve a saida. O stdin vai para /dev/null: o
++# stdin deste shell e a propria conexao com o servidor, e o openssl do
++# --check leria os proximos comandos dela.
++diagnose() {
++    local ec
++
++    ec=$(command -v epoptes-client 2>/dev/null)
++    test -n "$ec" || ec=/usr/sbin/epoptes-client
++    if ! grep -qs 'run_check' "$ec"; then
++        echo "  [FALHA] o epoptes-client desta maquina nao tem o --check"
++        echo "          -> atualize o pacote do cliente (voidbr-epoptes-client ou chili-epoptes-client)"
++        return 0
++    fi
++    if command -v timeout >/dev/null 2>&1; then
++        timeout 20 "$ec" --check </dev/null 2>&1
++    else
++        "$ec" --check </dev/null 2>&1
++    fi
++    return 0
++}
++
+ # Execute a command in the background and optionally print its pid.
+ # For internal use. Parameters:
+ # [-p]   = print the pid.
+@@ -260,17 +497,27 @@ shutdown() {
  # $2 = thumbshot height.
  thumbshot() {
      # TODO: remove compatibility fallback after a few versions
@@ -376,7 +957,24 @@ index d54ba3b..c817970 100644
      if [ -f "./thumbshot.py" ]; then
          executable=./thumbshot.py
      else
-@@ -378,11 +503,103 @@ message() {
+         executable=./screenshot
+     fi
+-    if ! $executable "$1" "$2"; then
++    # VoidBR patch: guarda o stderr para devolver o motivo da falha. A
++    # imagem continua indo direto para o stdout (o fd 3 so existe aqui).
++    { err=$($executable "$1" "$2" 2>&1 >&3 3>&-); } 3>&1
++    if [ $? -ne 0 ]; then
+         BAD_THUMBSHOTS=$((BAD_THUMBSHOTS + 1))
+         echo "$BAD_THUMBSHOTS failed thumbshots so far!" >&5
++        echo "$err" >&5
++        err=$(echo "$err" | grep . | tail -n 1 | sed 's/^[A-Za-z]*Error: //')
++        echo "VBR_THUMBSHOT_ERROR=${err:-a captura falhou sem mensagem}"
++    elif [ -n "$err" ]; then
++        echo "$err" >&2
+     fi
+ }
+ 
+@@ -378,11 +625,103 @@ message() {
      fi
  }
  
@@ -481,7 +1079,7 @@ index d54ba3b..c817970 100644
  }
  
  # Connect to the server to get assistance.
-@@ -390,7 +607,11 @@ get_monitored() {
+@@ -390,7 +729,11 @@ get_monitored() {
  # $1 = host:port.
  # $2 = grab keyboard and mouse.
  get_assisted() {
@@ -494,7 +1092,7 @@ index d54ba3b..c817970 100644
  }
  
  # Deactivate the screensaver, in order for the users to watch a broadcast.
-@@ -468,7 +689,7 @@ receive_broadcast() {
+@@ -468,7 +811,7 @@ receive_broadcast() {
  # The vnc clients should automatically exit when the server is killed.
  # Unfortunately, that isn't always true, so try to kill them anyway.
  stop_receptions() {
@@ -503,7 +1101,7 @@ index d54ba3b..c817970 100644
  
      unset receiving_broadcast
      ensure_display
-@@ -477,6 +698,11 @@ stop_receptions() {
+@@ -477,6 +820,11 @@ stop_receptions() {
          kill "$pid"
          xprop_unset EPOPTES_VNCVIEWER_PID
      fi
@@ -515,7 +1113,7 @@ index d54ba3b..c817970 100644
  }
  
  # Open a root terminal inside the X session.
-@@ -507,7 +733,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
+@@ -507,7 +855,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
  # exit automatically, so tell it to exit as soon as X is unavailable.
  ping() {
      if [ "$UID" -gt 0 ]; then
@@ -530,7 +1128,7 @@ index d54ba3b..c817970 100644
      fi
      if [ "$receiving_broadcast" = true ]; then
          reset_screensaver
-@@ -533,6 +765,17 @@ info
+@@ -533,6 +887,17 @@ info
  # Prevent dbus from getting autolaunched (issue #66)
  export "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/dev/null}"
  
@@ -548,3 +1146,32 @@ index d54ba3b..c817970 100644
  for i in 0 15; do
      trap "on_signal $i" $i
  done
+diff --git a/usr/share/epoptes/epoptes.ui b/usr/share/epoptes/epoptes.ui
+index 5840773..c8c3968 100644
+--- a/usr/share/epoptes/epoptes.ui
++++ b/usr/share/epoptes/epoptes.ui
+@@ -720,6 +720,24 @@
+                         <signal name="activate" handler="on_imi_clients_information_activate" swapped="no"/>
+                       </object>
+                     </child>
++                    <child>
++                      <object class="GtkMenuItem" id="imi_clients_diagnose">
++                        <property name="visible">True</property>
++                        <property name="can_focus">False</property>
++                        <property name="label">_Diagnosticar cliente...</property>
++                        <property name="use_underline">True</property>
++                        <signal name="activate" handler="on_imi_clients_diagnose_activate" swapped="no"/>
++                      </object>
++                    </child>
++                    <child>
++                      <object class="GtkMenuItem" id="imi_clients_reconnect">
++                        <property name="visible">True</property>
++                        <property name="can_focus">False</property>
++                        <property name="label">_Reconectar sessão</property>
++                        <property name="use_underline">True</property>
++                        <signal name="activate" handler="on_imi_clients_reconnect_activate" swapped="no"/>
++                      </object>
++                    </child>
+                   </object>
+                 </child>
+               </object>
