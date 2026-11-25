@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..ce4687e 100644
+index 720c958..6cefc0d 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,49 @@
+@@ -4,10 +4,52 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -110,6 +110,9 @@ index 720c958..ce4687e 100644
 +     Observar/Assistir o servidor gera uma, manda junto no comando e a
 +     passa ao visualizador em VNC_PASSWORD, que o TigerVNC le no lugar de
 +     perguntar. Os outros visualizadores perguntam a senha.
++  9. Ajuda > Manual do VoidBR (F1): mostra o LEIAME.md (tudo o que esta
++     versao faz e como usar) numa janela propria, com titulos, listas,
++     tabelas e comandos formatados, sem depender de navegador.
  """
  from distutils.version import LooseVersion
  import os
@@ -120,7 +123,12 @@ index 720c958..ce4687e 100644
  import random
  import socket
  import string
-@@ -25,9 +64,11 @@ from epoptes.ui.exec_command import ExecCommand
+@@ -21,13 +63,16 @@ from epoptes.ui.about import About
+ from epoptes.ui.benchmark import Benchmark
+ from epoptes.ui.client_information import ClientInformation
+ from epoptes.ui.common import gettext as _
++from epoptes.ui.common import locate_resource
+ from epoptes.ui.exec_command import ExecCommand
  from epoptes.ui.notifications import NotifyQueue
  from epoptes.ui.send_message import SendMessage
  
@@ -133,7 +141,7 @@ index 720c958..ce4687e 100644
  
  
  class EpoptesGui(object):
-@@ -79,6 +120,11 @@ class EpoptesGui(object):
+@@ -79,6 +124,11 @@ class EpoptesGui(object):
          self.vncserver_pwd = None
          self.vncviewer = None
          self.vncviewer_port = None
@@ -145,7 +153,7 @@ index 720c958..ce4687e 100644
  
          self.builder = Gtk.Builder()
          self.builder.add_from_file('epoptes.ui')
-@@ -98,7 +144,11 @@ class EpoptesGui(object):
+@@ -98,7 +148,11 @@ class EpoptesGui(object):
          self.set_labels_order(1, 0, None)
          self.icv_clients.set_model(self.cstore)
          self.icv_clients.set_pixbuf_column(C_PIXBUF)
@@ -158,16 +166,21 @@ index 720c958..ce4687e 100644
          self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
          self.on_icv_clients_selection_changed(None)
          self.icv_clients.enable_model_drag_source(
-@@ -167,6 +217,8 @@ class EpoptesGui(object):
+@@ -167,6 +221,13 @@ class EpoptesGui(object):
          mitem.set_active(True)
          self.get('cmi_show_real_names').set_active(self.show_real_names)
          self.mainwin.set_sensitive(False)
 +        GLib.timeout_add_seconds(20, self.poll_graphical_users)
 +        self.setup_font_zoom()
++        # VoidBR patch: F1 abre o manual (e aparece no menu)
++        atalhos = Gtk.AccelGroup()
++        self.mainwin.add_accel_group(atalhos)
++        self.get('imi_help_manual').add_accelerator(
++            'activate', atalhos, Gdk.KEY_F1, 0, Gtk.AccelFlags.VISIBLE)
  
      def save_settings(self):
          """Helper function for on_imi_file_quit_activate."""
-@@ -276,38 +328,86 @@ class EpoptesGui(object):
+@@ -276,38 +337,86 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -284,7 +297,108 @@ index 720c958..ce4687e 100644
  
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-@@ -629,6 +729,9 @@ class EpoptesGui(object):
+@@ -504,6 +613,100 @@ class EpoptesGui(object):
+         subprocess.Popen('./remote_assistance.py',
+                          cwd='/usr/share/epoptes-client')
+ 
++    def on_imi_help_manual_activate(self, _widget):
++        """Handle imi_help_manual.activate event: show the LEIAME.md."""
++        try:
++            with open(locate_resource('LEIAME.md'), encoding='utf-8') as arq:
++                texto = arq.read()
++        except OSError as exc:
++            self.warning_dialog('N\u00e3o encontrei o manual (LEIAME.md):\n'
++                                + str(exc))
++            return
++        janela = Gtk.Window(title='Manual do Epoptes \u2014 VoidBR e Chili Linux',
++                            transient_for=self.mainwin)
++        janela.set_default_size(860, 640)
++        buf = Gtk.TextBuffer()
++        for nome, props in (
++                ('h1', {'weight': 800, 'scale': 1.6, 'pixels-above-lines': 6,
++                        'pixels-below-lines': 8}),
++                ('h2', {'weight': 800, 'scale': 1.3, 'pixels-above-lines': 14,
++                        'pixels-below-lines': 4}),
++                ('h3', {'weight': 700, 'scale': 1.1, 'pixels-above-lines': 10,
++                        'pixels-below-lines': 2}),
++                ('negrito', {'weight': 700}),
++                ('codigo', {'family': 'monospace', 'left-margin': 28,
++                            'paragraph-background': '#ececec',
++                            'foreground': '#202020'}),
++                ('tabela', {'family': 'monospace', 'left-margin': 12}),
++                ('cabecalho', {'family': 'monospace', 'left-margin': 12,
++                               'weight': 700}),
++                ('item', {'left-margin': 18, 'indent': -12})):
++            buf.create_tag(nome, **props)
++        self.render_markdown(buf, texto)
++        view = Gtk.TextView(buffer=buf, editable=False, cursor_visible=False,
++                            wrap_mode=Gtk.WrapMode.WORD_CHAR, left_margin=16,
++                            right_margin=16, top_margin=12, bottom_margin=12)
++        scw = Gtk.ScrolledWindow()
++        scw.add(view)
++        janela.add(scw)
++        janela.connect('key-press-event', lambda w, ev: (
++            ev.keyval == Gdk.KEY_Escape and w.destroy()) or False)
++        janela.show_all()
++
++    @staticmethod
++    def render_markdown(buf, texto):
++        """Insert a small subset of Markdown into a Gtk.TextBuffer: titles,
++        lists, tables, indented commands and **bold**."""
++        def inserir(linha, *tags):
++            # **negrito** dentro da linha
++            partes = re.split(r'\*\*(.+?)\*\*', linha)
++            for i, parte in enumerate(partes):
++                if not parte:
++                    continue
++                extra = ('negrito',) if i % 2 else ()
++                buf.insert_with_tags_by_name(
++                    buf.get_end_iter(), parte, *(tags + extra))
++            buf.insert(buf.get_end_iter(), '\n')
++
++        linhas = texto.split('\n')
++        i = 0
++        while i < len(linhas):
++            linha = linhas[i]
++            if linha.startswith('|'):
++                # Tabela: alinha as colunas em fonte fixa
++                bloco = []
++                while i < len(linhas) and linhas[i].startswith('|'):
++                    celulas = [c.strip() for c in
++                               linhas[i].strip().strip('|').split('|')]
++                    if not all(re.match(r'^:?-+:?$', c) for c in celulas):
++                        bloco.append([c.replace('**', '') for c in celulas])
++                    i += 1
++                larguras = [max(len(lin[c]) if c < len(lin) else 0
++                                for lin in bloco)
++                            for c in range(max(len(lin) for lin in bloco))]
++                for n, lin in enumerate(bloco):
++                    texto_lin = '  '.join(
++                        (lin[c] if c < len(lin) else '').ljust(larguras[c])
++                        for c in range(len(larguras))).rstrip()
++                    buf.insert_with_tags_by_name(
++                        buf.get_end_iter(), texto_lin + '\n',
++                        'cabecalho' if n == 0 else 'tabela')
++                buf.insert(buf.get_end_iter(), '\n')
++                continue
++            if linha.startswith('### '):
++                inserir(linha[4:], 'h3')
++            elif linha.startswith('## '):
++                inserir(linha[3:], 'h2')
++            elif linha.startswith('# '):
++                inserir(linha[2:], 'h1')
++            elif re.match(r'^ {4,}\S', linha):
++                inserir(linha.strip(), 'codigo')
++            elif linha.startswith('- '):
++                inserir('\u2022 ' + linha[2:], 'item')
++            else:
++                inserir(linha)
++            i += 1
++
+     def on_imi_help_about_activate(self, _widget):
+         """Handle imi_help_about_activate.activate event."""
+         if not self.about:
+@@ -629,6 +832,9 @@ class EpoptesGui(object):
              single_client = True
          self.get('imi_clients_information').set_sensitive(single_client)
          self.get('tlb_clients_information').set_sensitive(single_client)
@@ -294,7 +408,7 @@ index 720c958..ce4687e 100644
  
          if selected:
              self.get('mni_add_to_group').set_sensitive(True)
-@@ -764,6 +867,9 @@ class EpoptesGui(object):
+@@ -764,6 +970,9 @@ class EpoptesGui(object):
                  client_.set_offline()
  
          LOG.w("Disconnect from", handle)
@@ -304,7 +418,7 @@ index 720c958..ce4687e 100644
          client = None
          for client in structs.clients:
              if client.hsystem == handle:
-@@ -813,12 +919,12 @@ class EpoptesGui(object):
+@@ -813,12 +1022,12 @@ class EpoptesGui(object):
          if client.users:
              for hsession, user in client.users.items():
                  self.cstore.append(
@@ -319,7 +433,7 @@ index 720c958..ce4687e 100644
                   self.imagetypes[client.type], client, ''])
  
      def fill_icon_view(self, group, keep_selection=False):
-@@ -923,9 +1029,11 @@ class EpoptesGui(object):
+@@ -923,9 +1132,11 @@ class EpoptesGui(object):
  
          # Update/fill the client information
          client.type, client.hostname = type_, host
@@ -331,7 +445,7 @@ index 720c958..ce4687e 100644
          else:
              # This is a user epoptes-client
              client.add_user(user, name, handle)
-@@ -949,7 +1057,541 @@ class EpoptesGui(object):
+@@ -949,7 +1160,541 @@ class EpoptesGui(object):
              user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
          else:
              user = ''
@@ -874,7 +988,7 @@ index 720c958..ce4687e 100644
  
      def calculate_label(self, client, username=''):
          """Return the iconview label from a hostname/alias and a username,
-@@ -1012,6 +1654,16 @@ class EpoptesGui(object):
+@@ -1012,6 +1757,16 @@ class EpoptesGui(object):
                  LOG.d("I got a thumbshot from %s." % handle)
                  if not reply:
                      return
@@ -891,7 +1005,7 @@ index 720c958..ce4687e 100644
                  try:
                      rowstride, size, pixels = reply.split(b'\n', 2)
                      rowstride = int(rowstride)
-@@ -1059,7 +1711,7 @@ class EpoptesGui(object):
+@@ -1059,7 +1814,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(
@@ -915,10 +1029,10 @@ index 22edcde..9c30a47 100644
      <property name="artists">Andrew Wedderburn (application icon)</property>
      <property name="logo_icon_name">epoptes</property>
 diff --git a/usr/share/epoptes/client-functions b/usr/share/epoptes/client-functions
-index d54ba3b..eb08572 100644
+index d54ba3b..546062e 100644
 --- a/usr/share/epoptes/client-functions
 +++ b/usr/share/epoptes/client-functions
-@@ -6,6 +6,108 @@
+@@ -6,6 +6,115 @@
  # Implements the client side of the epoptes communications protocol.
  # The daemon reads this file when it starts, and sends it to clients when they
  # connect. The clients actually source it and then wait for further commands.
@@ -1023,11 +1137,18 @@ index d54ba3b..eb08572 100644
 +#    segmentacao; a configuracao vai pelo gsettings e a senha pelo
 +#    secret-tool. Precisa do chaveiro destrancado. O GNOME mostra ao aluno
 +#    o indicador de tela compartilhada, com um botao de parar.
++#
++# 10. wayland_alive() guarda a identidade do socket do Wayland (inode e hora,
++#     exportada em EPOPTES_WAYLAND_ID) e falha se o socket mudar. Sem isso, depois de sair
++#     e entrar de novo no GNOME, a conexao da sessao antiga se relancava (o
++#     on_signal) e o ping passava, porque o login novo cria outro socket com
++#     o mesmo nome; o servidor via uma sessao duplicada, presa ao ambiente da
++#     sessao que acabou.
 +# ============================================================================
  
  # Dash handles signals a bit differently from bash.
  # We need to trap both 0 and 15 otherwise the trap function isn't called at all.
-@@ -20,8 +122,13 @@ on_signal() {
+@@ -20,8 +129,13 @@ on_signal() {
  
      code="$?"
      trap - 0 15
@@ -1042,7 +1163,7 @@ index d54ba3b..eb08572 100644
          systemctl list-jobs | grep -q 'shutdown.target[[:space:]]*start'; then
          echo "epoptes-client got signal: $1, but system is shutting down" >&5
      else
-@@ -60,16 +167,51 @@ ensure_display() {
+@@ -60,16 +174,64 @@ ensure_display() {
      fi
  }
  
@@ -1060,13 +1181,26 @@ index d54ba3b..eb08572 100644
 +# VoidBR patch: testa se o compositor Wayland desta sessao ainda esta de pe
 +# (o socket $WAYLAND_DISPLAY some quando o compositor encerra).
 +wayland_alive() {
-+    local sock
++    local sock id
 +
 +    case "$WAYLAND_DISPLAY" in
 +    /*) sock=$WAYLAND_DISPLAY ;;
 +    *) sock="${XDG_RUNTIME_DIR:-/run/user/$UID}/$WAYLAND_DISPLAY" ;;
 +    esac
-+    test -S "$sock"
++    test -S "$sock" || return 1
++    # O socket tem o mesmo nome (wayland-0) a cada login; o que muda e o
++    # arquivo. Guarda a identidade dele no primeiro teste (inode e hora de
++    # criacao, em nanossegundos: o inode sozinho pode ser reaproveitado),
++    # exportada para um epoptes-client relancado pelo on_signal herdar. Se o
++    # socket for outro, esta conexao e de uma sessao que ja acabou (o D-Bus
++    # da sessao antiga pode continuar de pe depois do logout, entao ele nao
++    # serve de teste).
++    id=$(stat -c '%i %z' "$sock" 2>/dev/null) || return 0
++    if [ -z "$EPOPTES_WAYLAND_ID" ]; then
++        export EPOPTES_WAYLAND_ID="$id"
++    elif [ "$id" != "$EPOPTES_WAYLAND_ID" ]; then
++        return 1
++    fi
 +}
 +
  xprop_set() {
@@ -1094,7 +1228,7 @@ index d54ba3b..eb08572 100644
      xprop -root -remove "$1"
  }
  
-@@ -139,14 +281,32 @@ info() {
+@@ -139,14 +301,32 @@ info() {
          else
              server_ip=$(getent hosts "$SERVER" | awk '{ print $1; exit }')
              server_ip=${server_ip:-$SERVER}
@@ -1133,7 +1267,7 @@ index d54ba3b..eb08572 100644
              MAC=$(main_mac)
              MAC=${MAC%% *}
              test -n "$MAC" || die "Empty MAC"
-@@ -177,9 +337,127 @@ cpu=$CPU
+@@ -177,9 +357,127 @@ cpu=$CPU
  ram=$RAM
  vga=$VGA
  os=$OS
@@ -1261,7 +1395,7 @@ index d54ba3b..eb08572 100644
  # Execute a command in the background and optionally print its pid.
  # For internal use. Parameters:
  # [-p]   = print the pid.
-@@ -260,17 +538,27 @@ shutdown() {
+@@ -260,17 +558,27 @@ shutdown() {
  # $2 = thumbshot height.
  thumbshot() {
      # TODO: remove compatibility fallback after a few versions
@@ -1291,7 +1425,7 @@ index d54ba3b..eb08572 100644
      fi
  }
  
-@@ -378,19 +666,246 @@ message() {
+@@ -378,19 +686,246 @@ message() {
      fi
  }
  
@@ -1540,7 +1674,7 @@ index d54ba3b..eb08572 100644
  }
  
  # Deactivate the screensaver, in order for the users to watch a broadcast.
-@@ -468,7 +983,7 @@ receive_broadcast() {
+@@ -468,7 +1003,7 @@ receive_broadcast() {
  # The vnc clients should automatically exit when the server is killed.
  # Unfortunately, that isn't always true, so try to kill them anyway.
  stop_receptions() {
@@ -1549,7 +1683,7 @@ index d54ba3b..eb08572 100644
  
      unset receiving_broadcast
      ensure_display
-@@ -477,6 +992,14 @@ stop_receptions() {
+@@ -477,6 +1012,14 @@ stop_receptions() {
          kill "$pid"
          xprop_unset EPOPTES_VNCVIEWER_PID
      fi
@@ -1564,7 +1698,7 @@ index d54ba3b..eb08572 100644
  }
  
  # Open a root terminal inside the X session.
-@@ -507,7 +1030,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
+@@ -507,7 +1050,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
  # exit automatically, so tell it to exit as soon as X is unavailable.
  ping() {
      if [ "$UID" -gt 0 ]; then
@@ -1579,7 +1713,7 @@ index d54ba3b..eb08572 100644
      fi
      if [ "$receiving_broadcast" = true ]; then
          reset_screensaver
-@@ -533,6 +1062,17 @@ info
+@@ -533,6 +1082,23 @@ info
  # Prevent dbus from getting autolaunched (issue #66)
  export "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/dev/null}"
  
@@ -1594,11 +1728,17 @@ index d54ba3b..eb08572 100644
 +    fi
 +fi
 +
++# VoidBR patch: conexao de sessao Wayland que nasceu de um relancamento
++# depois do logout (com o ambiente da sessao que acabou) encerra ja aqui.
++if [ "$UID" -gt 0 ] && [ -n "$WAYLAND_DISPLAY" ]; then
++    wayland_alive || die "No Wayland (sessao encerrada ou de outro login)"
++fi
++
  for i in 0 15; do
      trap "on_signal $i" $i
  done
 diff --git a/usr/share/epoptes/epoptes.ui b/usr/share/epoptes/epoptes.ui
-index 5840773..c8c3968 100644
+index 5840773..fdc1b6e 100644
 --- a/usr/share/epoptes/epoptes.ui
 +++ b/usr/share/epoptes/epoptes.ui
 @@ -720,6 +720,24 @@
@@ -1626,3 +1766,25 @@ index 5840773..c8c3968 100644
                    </object>
                  </child>
                </object>
+@@ -734,6 +752,21 @@
+                   <object class="GtkMenu">
+                     <property name="visible">True</property>
+                     <property name="can_focus">False</property>
++                    <child>
++                      <object class="GtkMenuItem" id="imi_help_manual">
++                        <property name="visible">True</property>
++                        <property name="can_focus">False</property>
++                        <property name="label">_Manual do VoidBR</property>
++                        <property name="use_underline">True</property>
++                        <signal name="activate" handler="on_imi_help_manual_activate" swapped="no"/>
++                      </object>
++                    </child>
++                    <child>
++                      <object class="GtkSeparatorMenuItem">
++                        <property name="visible">True</property>
++                        <property name="can_focus">False</property>
++                      </object>
++                    </child>
+                     <child>
+                       <object class="GtkImageMenuItem" id="imi_help_home">
+                         <property name="label">gtk-home</property>
