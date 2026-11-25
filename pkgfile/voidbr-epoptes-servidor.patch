@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..dac00ad 100644
+index 720c958..ce4687e 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,44 @@
+@@ -4,10 +4,49 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -105,6 +105,11 @@ index 720c958..dac00ad 100644
 +     (dialogos, Sobre, diagnostico) recebe o mesmo zoom nos icones, no
 +     tamanho inicial e nos atalhos. As miniaturas dos clientes continuam
 +     no controle proprio, embaixo.
++  8. Observar/Assistir no GNOME com Wayland, pelo servidor VNC do proprio
++     GNOME (ver o item 9 do client-functions). Ele exige senha: a cada
++     Observar/Assistir o servidor gera uma, manda junto no comando e a
++     passa ao visualizador em VNC_PASSWORD, que o TigerVNC le no lugar de
++     perguntar. Os outros visualizadores perguntam a senha.
  """
  from distutils.version import LooseVersion
  import os
@@ -115,7 +120,7 @@ index 720c958..dac00ad 100644
  import random
  import socket
  import string
-@@ -25,9 +59,11 @@ from epoptes.ui.exec_command import ExecCommand
+@@ -25,9 +64,11 @@ from epoptes.ui.exec_command import ExecCommand
  from epoptes.ui.notifications import NotifyQueue
  from epoptes.ui.send_message import SendMessage
  
@@ -128,7 +133,7 @@ index 720c958..dac00ad 100644
  
  
  class EpoptesGui(object):
-@@ -79,6 +115,11 @@ class EpoptesGui(object):
+@@ -79,6 +120,11 @@ class EpoptesGui(object):
          self.vncserver_pwd = None
          self.vncviewer = None
          self.vncviewer_port = None
@@ -140,7 +145,7 @@ index 720c958..dac00ad 100644
  
          self.builder = Gtk.Builder()
          self.builder.add_from_file('epoptes.ui')
-@@ -98,7 +139,11 @@ class EpoptesGui(object):
+@@ -98,7 +144,11 @@ class EpoptesGui(object):
          self.set_labels_order(1, 0, None)
          self.icv_clients.set_model(self.cstore)
          self.icv_clients.set_pixbuf_column(C_PIXBUF)
@@ -153,7 +158,7 @@ index 720c958..dac00ad 100644
          self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
          self.on_icv_clients_selection_changed(None)
          self.icv_clients.enable_model_drag_source(
-@@ -167,6 +212,8 @@ class EpoptesGui(object):
+@@ -167,6 +217,8 @@ class EpoptesGui(object):
          mitem.set_active(True)
          self.get('cmi_show_real_names').set_active(self.show_real_names)
          self.mainwin.set_sensitive(False)
@@ -162,7 +167,7 @@ index 720c958..dac00ad 100644
  
      def save_settings(self):
          """Helper function for on_imi_file_quit_activate."""
-@@ -276,38 +323,76 @@ class EpoptesGui(object):
+@@ -276,38 +328,86 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -255,12 +260,22 @@ index 720c958..dac00ad 100644
 +        else:
 +            # A generic vncviewer, e.g. tigervnc on Arch/Fedora/SUSE
 +            scmd = ['vncviewer', '-listen', str(self.vncviewer_port)]
-+        self.vncviewer = subprocess.Popen(scmd)
++        # VoidBR patch: senha nova a cada Observar/Assistir, so usada pelos
++        # clientes GNOME (o servidor VNC do GNOME exige senha); o TigerVNC a
++        # le de VNC_PASSWORD. Vai como ultimo parametro do get_monitored
++        # ($2) e do get_assisted ($3, depois do "grab", que pode ser vazio).
++        senha = ''.join(random.SystemRandom().choice(
++            string.ascii_letters + string.digits) for _ in range(8))
++        self.vncviewer = subprocess.Popen(
++            scmd, env=dict(os.environ, VNC_PASSWORD=senha))
  
          # And, tell the clients to connect to the server
 -        self.exec_on_selected_clients(' '.join([cmd, '"${GUI_IP}:%d"' % self.vncviewer_port] + list(args)))
++        args = list(args)
++        if cmd == 'get_assisted' and not args:
++            args = ["''"]
 +        command = ' '.join(
-+            [cmd, '"${GUI_IP}:%d"' % self.vncviewer_port] + list(args))
++            [cmd, '"${GUI_IP}:%d"' % self.vncviewer_port] + args + [senha])
 +        if bad:
 +            self.exec_on_clients(command, good)
 +        else:
@@ -269,7 +284,7 @@ index 720c958..dac00ad 100644
  
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-@@ -629,6 +714,9 @@ class EpoptesGui(object):
+@@ -629,6 +729,9 @@ class EpoptesGui(object):
              single_client = True
          self.get('imi_clients_information').set_sensitive(single_client)
          self.get('tlb_clients_information').set_sensitive(single_client)
@@ -279,7 +294,7 @@ index 720c958..dac00ad 100644
  
          if selected:
              self.get('mni_add_to_group').set_sensitive(True)
-@@ -764,6 +852,9 @@ class EpoptesGui(object):
+@@ -764,6 +867,9 @@ class EpoptesGui(object):
                  client_.set_offline()
  
          LOG.w("Disconnect from", handle)
@@ -289,7 +304,7 @@ index 720c958..dac00ad 100644
          client = None
          for client in structs.clients:
              if client.hsystem == handle:
-@@ -813,12 +904,12 @@ class EpoptesGui(object):
+@@ -813,12 +919,12 @@ class EpoptesGui(object):
          if client.users:
              for hsession, user in client.users.items():
                  self.cstore.append(
@@ -304,7 +319,7 @@ index 720c958..dac00ad 100644
                   self.imagetypes[client.type], client, ''])
  
      def fill_icon_view(self, group, keep_selection=False):
-@@ -923,9 +1014,11 @@ class EpoptesGui(object):
+@@ -923,9 +1029,11 @@ class EpoptesGui(object):
  
          # Update/fill the client information
          client.type, client.hostname = type_, host
@@ -316,7 +331,7 @@ index 720c958..dac00ad 100644
          else:
              # This is a user epoptes-client
              client.add_user(user, name, handle)
-@@ -949,7 +1042,535 @@ class EpoptesGui(object):
+@@ -949,7 +1057,541 @@ class EpoptesGui(object):
              user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
          else:
              user = ''
@@ -604,10 +619,16 @@ index 720c958..dac00ad 100644
 +        vnc = info.get('vnc')
 +        vnc = vnc.split(',') if vnc is not None else None
 +        if session == 'wayland':
-+            if 'GNOME' in desktop or 'KDE' in desktop or 'PLASMA' in desktop:
-+                return ('GNOME e KDE no Wayland ainda n\u00e3o t\u00eam servidor '
-+                        'VNC compat\u00edvel (o wayvnc funciona em Hyprland, '
-+                        'Sway e outros wlroots)')
++            if 'KDE' in desktop or 'PLASMA' in desktop:
++                return ('KDE no Wayland ainda n\u00e3o tem servidor VNC '
++                        'compat\u00edvel (o wayvnc funciona em Hyprland, '
++                        'Sway e outros wlroots; o GNOME usa o pr\u00f3prio)')
++            if 'GNOME' in desktop:
++                if vnc is not None and 'grd' not in vnc:
++                    return ('falta o pacote gnome-remote-desktop no cliente '
++                            '(o servidor VNC do pr\u00f3prio GNOME) ou o '
++                            'secret-tool (pacote libsecret)')
++                return ''
 +            if vnc is not None and 'wayvnc' not in vnc:
 +                return 'falta o pacote wayvnc no cliente'
 +        elif session == 'x11' and vnc is not None and 'x11vnc' not in vnc:
@@ -853,7 +874,7 @@ index 720c958..dac00ad 100644
  
      def calculate_label(self, client, username=''):
          """Return the iconview label from a hostname/alias and a username,
-@@ -1012,6 +1633,16 @@ class EpoptesGui(object):
+@@ -1012,6 +1654,16 @@ class EpoptesGui(object):
                  LOG.d("I got a thumbshot from %s." % handle)
                  if not reply:
                      return
@@ -870,7 +891,7 @@ index 720c958..dac00ad 100644
                  try:
                      rowstride, size, pixels = reply.split(b'\n', 2)
                      rowstride = int(rowstride)
-@@ -1059,7 +1690,7 @@ class EpoptesGui(object):
+@@ -1059,7 +1711,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(
@@ -894,10 +915,10 @@ index 22edcde..9c30a47 100644
      <property name="artists">Andrew Wedderburn (application icon)</property>
      <property name="logo_icon_name">epoptes</property>
 diff --git a/usr/share/epoptes/client-functions b/usr/share/epoptes/client-functions
-index d54ba3b..cf5ad23 100644
+index d54ba3b..eb08572 100644
 --- a/usr/share/epoptes/client-functions
 +++ b/usr/share/epoptes/client-functions
-@@ -6,6 +6,96 @@
+@@ -6,6 +6,108 @@
  # Implements the client side of the epoptes communications protocol.
  # The daemon reads this file when it starts, and sends it to clients when they
  # connect. The clients actually source it and then wait for further commands.
@@ -990,11 +1011,23 @@ index d54ba3b..cf5ad23 100644
 +#                        shell atual com KILL, que nao dispara o
 +#                        relancamento do on_signal. Com "drop", so encerra
 +#                        (para conexoes duplicadas).
++#
++# 9. Observar/Assistir no GNOME com Wayland: o GNOME nao deixa programas de
++#    fora capturarem a tela (nem wayvnc, nem x11vnc), so o servidor VNC dele
++#    mesmo, o gnome-remote-desktop. gnome_vnc_session() (nova) inicia esse
++#    servidor so durante o Observar/Assistir, numa porta livre, com a senha
++#    que o servidor do Epoptes manda (gravada no chaveiro do GNOME, onde o
++#    gnome-remote-desktop a procura), e faz a ponte com o socat, como no
++#    wayvnc. No fim devolve a configuracao e a senha que o usuario tinha.
++#    O grdctl nao e usado: no Void (sem systemd) ele cai com falha de
++#    segmentacao; a configuracao vai pelo gsettings e a senha pelo
++#    secret-tool. Precisa do chaveiro destrancado. O GNOME mostra ao aluno
++#    o indicador de tela compartilhada, com um botao de parar.
 +# ============================================================================
  
  # Dash handles signals a bit differently from bash.
  # We need to trap both 0 and 15 otherwise the trap function isn't called at all.
-@@ -20,8 +110,13 @@ on_signal() {
+@@ -20,8 +122,13 @@ on_signal() {
  
      code="$?"
      trap - 0 15
@@ -1009,7 +1042,7 @@ index d54ba3b..cf5ad23 100644
          systemctl list-jobs | grep -q 'shutdown.target[[:space:]]*start'; then
          echo "epoptes-client got signal: $1, but system is shutting down" >&5
      else
-@@ -60,16 +155,51 @@ ensure_display() {
+@@ -60,16 +167,51 @@ ensure_display() {
      fi
  }
  
@@ -1061,7 +1094,7 @@ index d54ba3b..cf5ad23 100644
      xprop -root -remove "$1"
  }
  
-@@ -139,14 +269,32 @@ info() {
+@@ -139,14 +281,32 @@ info() {
          else
              server_ip=$(getent hosts "$SERVER" | awk '{ print $1; exit }')
              server_ip=${server_ip:-$SERVER}
@@ -1100,7 +1133,7 @@ index d54ba3b..cf5ad23 100644
              MAC=$(main_mac)
              MAC=${MAC%% *}
              test -n "$MAC" || die "Empty MAC"
-@@ -177,9 +325,98 @@ cpu=$CPU
+@@ -177,9 +337,127 @@ cpu=$CPU
  ram=$RAM
  vga=$VGA
  os=$OS
@@ -1117,7 +1150,36 @@ index d54ba3b..cf5ad23 100644
 +    for v in wayvnc x11vnc; do
 +        command -v "$v" >/dev/null 2>&1 && list="${list:+$list,}$v"
 +    done
++    # grd: o servidor VNC do GNOME e o secret-tool, para gravar a senha
++    if grd_daemon >/dev/null && command -v secret-tool >/dev/null 2>&1; then
++        list="${list:+$list,}grd"
++    fi
 +    echo "$list"
++}
++
++# VoidBR patch: caminho do gnome-remote-desktop-daemon. No Void fica em
++# /usr/libexec; no Arch, o libexec e o proprio /usr/lib.
++grd_daemon() {
++    local f
++
++    for f in /usr/libexec/gnome-remote-desktop-daemon \
++        /usr/lib/gnome-remote-desktop-daemon \
++        /usr/lib/gnome-remote-desktop/gnome-remote-desktop-daemon; do
++        if [ -x "$f" ]; then
++            echo "$f"
++            return 0
++        fi
++    done
++    return 1
++}
++
++# VoidBR patch: sessao grafica GNOME? ($XDG_CURRENT_DESKTOP pode ser uma
++# lista, como "ubuntu:GNOME" ou "GNOME-Classic:GNOME")
++gnome_session() {
++    case ":$XDG_CURRENT_DESKTOP:" in
++    *:GNOME:*) return 0 ;;
++    esac
++    return 1
 +}
 +
 +# VoidBR patch: refaz a conexao da sessao, a pedido do servidor.
@@ -1199,7 +1261,7 @@ index d54ba3b..cf5ad23 100644
  # Execute a command in the background and optionally print its pid.
  # For internal use. Parameters:
  # [-p]   = print the pid.
-@@ -260,17 +497,27 @@ shutdown() {
+@@ -260,17 +538,27 @@ shutdown() {
  # $2 = thumbshot height.
  thumbshot() {
      # TODO: remove compatibility fallback after a few versions
@@ -1229,7 +1291,7 @@ index d54ba3b..cf5ad23 100644
      fi
  }
  
-@@ -378,11 +625,103 @@ message() {
+@@ -378,19 +666,246 @@ message() {
      fi
  }
  
@@ -1321,12 +1383,140 @@ index d54ba3b..cf5ad23 100644
 +    xprop_set EPOPTES_VNCVIEWER_PID "$spid"
 +}
 +
++# VoidBR patch: Observar/Assistir no GNOME com Wayland, pelo servidor VNC do
++# proprio GNOME (ver o item 9 no topo). Roda em segundo plano, porque gravar
++# a senha pode esperar o usuario destrancar o chaveiro, e este shell nao
++# pode ficar preso (o servidor manda os pings por ele).
++# Parameters:
++# $1 = host:port.
++# $2 = viewonly ou assist.
++# $3 = senha do VNC, gerada pelo servidor do Epoptes.
++gnome_reverse_vnc() {
++    local grd c
++
++    if ! grd=$(grd_daemon); then
++        echo "gnome_reverse_vnc: gnome-remote-desktop nao encontrado, instale o pacote" >&5
++        return 1
++    fi
++    for c in secret-tool socat gsettings ss; do
++        if ! command -v "$c" >/dev/null 2>&1; then
++            echo "gnome_reverse_vnc: $c nao encontrado" >&5
++            return 1
++        fi
++    done
++    if [ -z "$3" ]; then
++        echo "gnome_reverse_vnc: o servidor nao mandou a senha do VNC" >&5
++        return 1
++    fi
++    gnome_vnc_stop
++    background gnome_vnc_session "$grd" "$1" "$2" "$3"
++}
++
++# VoidBR patch: encerra o Observar/Assistir do GNOME em andamento. Basta
++# encerrar o servidor do GNOME: o socat termina junto e o gnome_vnc_session
++# devolve a configuracao e a senha do usuario.
++gnome_vnc_stop() {
++    local pid
++
++    pid=$(xprop_get EPOPTES_GRD_PID)
++    if [ -n "$pid" ] && kill "$pid" 2>/dev/null; then
++        sleep 1
++    fi
++}
++
++# VoidBR patch: uma sessao do Observar/Assistir no GNOME, do comeco ao fim.
++# Parameters: $1 = gnome-remote-desktop-daemon, $2 = host:port,
++# $3 = viewonly ou assist, $4 = senha.
++gnome_vnc_session() {
++    local grd="$1" target="$2" mode="$3" pwd="$4" schema xdg dir port gpid
++    local antiga tentativa k v
++
++    schema=org.gnome.desktop.remote-desktop.vnc
++    xdg=org.gnome.RemoteDesktop.VncCredentials
++    dir=$(wayland_state_dir)
++    # Dois servidores do GNOME na mesma sessao disputam o mesmo nome no
++    # D-Bus; se o usuario ja ligou o compartilhamento de tela, desiste.
++    if pgrep -u "$UID" -f gnome-remote-desktop-daemon >/dev/null; then
++        echo "gnome_vnc_session: o compartilhamento de tela do GNOME ja esta ligado nesta sessao" >&5
++        return 1
++    fi
++    port=$(python3 -c '
++import socket
++s = socket.socket()
++s.bind(("127.0.0.1", 0))
++print(s.getsockname()[1])
++s.close()
++' 2>/dev/null)
++    if [ -z "$port" ]; then
++        echo "gnome_vnc_session: nao consegui escolher uma porta livre" >&5
++        return 1
++    fi
++
++    # Guarda o que o usuario tinha, para devolver no fim. O timeout evita
++    # ficar preso para sempre se o chaveiro estiver trancado e ninguem
++    # digitar a senha dele na tela.
++    for k in enable auth-method view-only; do
++        echo "$k $(gsettings get "$schema" "$k")"
++    done >"$dir/grd-settings"
++    antiga=$(timeout 60 secret-tool lookup xdg:schema "$xdg" 2>/dev/null)
++    # O gnome-remote-desktop guarda a senha como texto de um GVariant de
++    # string, ou seja, entre aspas simples: 'senha'.
++    if ! printf "'%s'" "$pwd" | timeout 60 secret-tool store \
++        --label='GNOME Remote Desktop VNC password' xdg:schema "$xdg"; then
++        echo "gnome_vnc_session: nao consegui gravar a senha no chaveiro do GNOME (trancado?)" >&5
++        rm -f "$dir/grd-settings"
++        return 1
++    fi
++    gsettings set "$schema" auth-method "'password'"
++    if [ "$mode" = viewonly ]; then
++        gsettings set "$schema" view-only true
++    else
++        gsettings set "$schema" view-only false
++    fi
++    gsettings set "$schema" enable true
++
++    "$grd" --vnc-port "$port" >"$dir/grd.log" 2>&1 &
++    gpid=$!
++    xprop_set EPOPTES_GRD_PID "$gpid"
++    # Espera ate 10 s o servidor do GNOME comecar a escutar.
++    tentativa=0
++    while [ "$tentativa" -lt 50 ] && kill -0 "$gpid" 2>/dev/null &&
++        ! ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; do
++        tentativa=$((tentativa + 1))
++        sleep 0.2
++    done
++    if kill -0 "$gpid" 2>/dev/null; then
++        # Termina quando o servidor do Epoptes fecha o visualizador, quando o
++        # aluno clica em parar no indicador do GNOME, ou no stop_receptions.
++        socat "TCP:$target" "TCP:127.0.0.1:$port"
++    else
++        echo "gnome_vnc_session: o gnome-remote-desktop nao subiu, veja $dir/grd.log" >&5
++    fi
++
++    kill "$gpid" 2>/dev/null
++    wait "$gpid" 2>/dev/null
++    xprop_unset EPOPTES_GRD_PID
++    while read -r k v; do
++        gsettings set "$schema" "$k" "$v"
++    done <"$dir/grd-settings"
++    rm -f "$dir/grd-settings"
++    if [ -n "$antiga" ]; then
++        printf '%s' "$antiga" | timeout 60 secret-tool store \
++            --label='GNOME Remote Desktop VNC password' xdg:schema "$xdg"
++    else
++        timeout 60 secret-tool clear xdg:schema "$xdg"
++    fi
++}
++
  # Connect to the server to be monitored.
  # Parameters:
  # $1 = host:port.
++# $2 = VoidBR patch: senha do VNC (so o GNOME com Wayland usa).
  get_monitored() {
 -    background x11vnc -q -nopw -noshm -24to32 -viewonly -connect_or_exit "$1"
-+    if [ -n "$WAYLAND_DISPLAY" ]; then
++    if [ -n "$WAYLAND_DISPLAY" ] && gnome_session; then
++        gnome_reverse_vnc "$1" viewonly "$2"
++    elif [ -n "$WAYLAND_DISPLAY" ]; then
 +        wayland_reverse_vnc "$1" viewonly
 +    else
 +        background x11vnc -q -nopw -noshm -24to32 -viewonly -connect_or_exit "$1"
@@ -1334,12 +1524,15 @@ index d54ba3b..cf5ad23 100644
  }
  
  # Connect to the server to get assistance.
-@@ -390,7 +729,11 @@ get_monitored() {
+ # Parameters:
  # $1 = host:port.
  # $2 = grab keyboard and mouse.
++# $3 = VoidBR patch: senha do VNC (so o GNOME com Wayland usa).
  get_assisted() {
 -    background x11vnc -q -nopw -noshm -24to32 ${2:+-grabptr -grabkbd} -connect_or_exit "$1"
-+    if [ -n "$WAYLAND_DISPLAY" ]; then
++    if [ -n "$WAYLAND_DISPLAY" ] && gnome_session; then
++        gnome_reverse_vnc "$1" assist "$3"
++    elif [ -n "$WAYLAND_DISPLAY" ]; then
 +        wayland_reverse_vnc "$1" assist
 +    else
 +        background x11vnc -q -nopw -noshm -24to32 ${2:+-grabptr -grabkbd} -connect_or_exit "$1"
@@ -1347,7 +1540,7 @@ index d54ba3b..cf5ad23 100644
  }
  
  # Deactivate the screensaver, in order for the users to watch a broadcast.
-@@ -468,7 +811,7 @@ receive_broadcast() {
+@@ -468,7 +983,7 @@ receive_broadcast() {
  # The vnc clients should automatically exit when the server is killed.
  # Unfortunately, that isn't always true, so try to kill them anyway.
  stop_receptions() {
@@ -1356,7 +1549,7 @@ index d54ba3b..cf5ad23 100644
  
      unset receiving_broadcast
      ensure_display
-@@ -477,6 +820,11 @@ stop_receptions() {
+@@ -477,6 +992,14 @@ stop_receptions() {
          kill "$pid"
          xprop_unset EPOPTES_VNCVIEWER_PID
      fi
@@ -1365,10 +1558,13 @@ index d54ba3b..cf5ad23 100644
 +        kill "$wpid"
 +        xprop_unset EPOPTES_WAYVNC_PID
 +    fi
++    # VoidBR patch: Observar/Assistir do GNOME (a limpeza fica com ele)
++    wpid=$(xprop_get EPOPTES_GRD_PID)
++    test -z "$wpid" || kill "$wpid" 2>/dev/null
  }
  
  # Open a root terminal inside the X session.
-@@ -507,7 +855,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
+@@ -507,7 +1030,13 @@ TERM=xterm exec socat EXEC:'screen $screen_params',pty,stderr tcp:$1"
  # exit automatically, so tell it to exit as soon as X is unavailable.
  ping() {
      if [ "$UID" -gt 0 ]; then
@@ -1383,7 +1579,7 @@ index d54ba3b..cf5ad23 100644
      fi
      if [ "$receiving_broadcast" = true ]; then
          reset_screensaver
-@@ -533,6 +887,17 @@ info
+@@ -533,6 +1062,17 @@ info
  # Prevent dbus from getting autolaunched (issue #66)
  export "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/dev/null}"
  
