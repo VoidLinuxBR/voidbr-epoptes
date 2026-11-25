@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..6cefc0d 100644
+index 720c958..0fe45e9 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,52 @@
+@@ -4,10 +4,55 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -113,6 +113,9 @@ index 720c958..6cefc0d 100644
 +  9. Ajuda > Manual do VoidBR (F1): mostra o LEIAME.md (tudo o que esta
 +     versao faz e como usar) numa janela propria, com titulos, listas,
 +     tabelas e comandos formatados, sem depender de navegador.
++ 10. Miniatura de cliente GNOME com Wayland a cada 60 s (ajustavel em
++     thumbshots_gnome_seconds), em vez de 5 s: la ela vem do portal de
++     captura, que pisca a tela e toca o som de camera a cada captura.
  """
  from distutils.version import LooseVersion
  import os
@@ -123,7 +126,7 @@ index 720c958..6cefc0d 100644
  import random
  import socket
  import string
-@@ -21,13 +63,16 @@ from epoptes.ui.about import About
+@@ -21,13 +66,16 @@ from epoptes.ui.about import About
  from epoptes.ui.benchmark import Benchmark
  from epoptes.ui.client_information import ClientInformation
  from epoptes.ui.common import gettext as _
@@ -141,7 +144,7 @@ index 720c958..6cefc0d 100644
  
  
  class EpoptesGui(object):
-@@ -79,6 +124,11 @@ class EpoptesGui(object):
+@@ -79,6 +127,11 @@ class EpoptesGui(object):
          self.vncserver_pwd = None
          self.vncviewer = None
          self.vncviewer_port = None
@@ -153,7 +156,7 @@ index 720c958..6cefc0d 100644
  
          self.builder = Gtk.Builder()
          self.builder.add_from_file('epoptes.ui')
-@@ -98,7 +148,11 @@ class EpoptesGui(object):
+@@ -98,7 +151,11 @@ class EpoptesGui(object):
          self.set_labels_order(1, 0, None)
          self.icv_clients.set_model(self.cstore)
          self.icv_clients.set_pixbuf_column(C_PIXBUF)
@@ -166,7 +169,7 @@ index 720c958..6cefc0d 100644
          self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
          self.on_icv_clients_selection_changed(None)
          self.icv_clients.enable_model_drag_source(
-@@ -167,6 +221,13 @@ class EpoptesGui(object):
+@@ -167,6 +224,13 @@ class EpoptesGui(object):
          mitem.set_active(True)
          self.get('cmi_show_real_names').set_active(self.show_real_names)
          self.mainwin.set_sensitive(False)
@@ -180,7 +183,7 @@ index 720c958..6cefc0d 100644
  
      def save_settings(self):
          """Helper function for on_imi_file_quit_activate."""
-@@ -276,38 +337,86 @@ class EpoptesGui(object):
+@@ -276,38 +340,86 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -297,7 +300,7 @@ index 720c958..6cefc0d 100644
  
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-@@ -504,6 +613,100 @@ class EpoptesGui(object):
+@@ -504,6 +616,100 @@ class EpoptesGui(object):
          subprocess.Popen('./remote_assistance.py',
                           cwd='/usr/share/epoptes-client')
  
@@ -398,7 +401,7 @@ index 720c958..6cefc0d 100644
      def on_imi_help_about_activate(self, _widget):
          """Handle imi_help_about_activate.activate event."""
          if not self.about:
-@@ -629,6 +832,9 @@ class EpoptesGui(object):
+@@ -629,6 +835,9 @@ class EpoptesGui(object):
              single_client = True
          self.get('imi_clients_information').set_sensitive(single_client)
          self.get('tlb_clients_information').set_sensitive(single_client)
@@ -408,7 +411,7 @@ index 720c958..6cefc0d 100644
  
          if selected:
              self.get('mni_add_to_group').set_sensitive(True)
-@@ -764,6 +970,9 @@ class EpoptesGui(object):
+@@ -764,6 +973,9 @@ class EpoptesGui(object):
                  client_.set_offline()
  
          LOG.w("Disconnect from", handle)
@@ -418,7 +421,7 @@ index 720c958..6cefc0d 100644
          client = None
          for client in structs.clients:
              if client.hsystem == handle:
-@@ -813,12 +1022,12 @@ class EpoptesGui(object):
+@@ -813,12 +1025,12 @@ class EpoptesGui(object):
          if client.users:
              for hsession, user in client.users.items():
                  self.cstore.append(
@@ -433,7 +436,7 @@ index 720c958..6cefc0d 100644
                   self.imagetypes[client.type], client, ''])
  
      def fill_icon_view(self, group, keep_selection=False):
-@@ -923,9 +1132,11 @@ class EpoptesGui(object):
+@@ -923,9 +1135,11 @@ class EpoptesGui(object):
  
          # Update/fill the client information
          client.type, client.hostname = type_, host
@@ -445,7 +448,7 @@ index 720c958..6cefc0d 100644
          else:
              # This is a user epoptes-client
              client.add_user(user, name, handle)
-@@ -949,7 +1160,541 @@ class EpoptesGui(object):
+@@ -949,7 +1163,541 @@ class EpoptesGui(object):
              user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
          else:
              user = ''
@@ -988,7 +991,33 @@ index 720c958..6cefc0d 100644
  
      def calculate_label(self, client, username=''):
          """Return the iconview label from a hostname/alias and a username,
-@@ -1012,6 +1757,16 @@ class EpoptesGui(object):
+@@ -1000,6 +1748,19 @@ class EpoptesGui(object):
+             del self.current_thumbshots[handle]
+         return False
+ 
++    def thumbshot_interval(self, handle):
++        """Return the msec to wait before asking a new thumbshot."""
++        # VoidBR patch: no GNOME com Wayland a miniatura vem do portal de
++        # captura, que pisca a tela e toca o som de camera a cada captura
++        # (e do proprio GNOME, nao da para desligar). La, so a cada
++        # thumbshots_gnome_seconds (padrao 60 s), da secao [GUI] do settings.
++        info = self.conn_info.get(handle, {})
++        if info.get('session') == 'wayland' and \
++                'GNOME' in info.get('desktop', '').upper().split(':'):
++            return 1000 * max(5, config.settings.getint(
++                'GUI', 'thumbshots_gnome_seconds', fallback=60))
++        return int(config.system['THUMBSHOT_MS'])
++
+     def got_thumbshot(self, handle, reply):
+         """Callback after running`thumbshot` on a client."""
+         for i in self.cstore:
+@@ -1007,11 +1768,21 @@ class EpoptesGui(object):
+                 # Ask for a new thumbshot THUMBSHOT_MS msec after the last one.
+                 # So if the client is too stressed and needs e.g. 7 secs to
+                 # send a thumbshot, we'll ask for one every 12 secs.
+-                GLib.timeout_add(int(config.system['THUMBSHOT_MS']),
++                GLib.timeout_add(self.thumbshot_interval(handle),
+                                  self.ask_thumbshot, handle)
                  LOG.d("I got a thumbshot from %s." % handle)
                  if not reply:
                      return
@@ -1005,7 +1034,7 @@ index 720c958..6cefc0d 100644
                  try:
                      rowstride, size, pixels = reply.split(b'\n', 2)
                      rowstride = int(rowstride)
-@@ -1059,7 +1814,7 @@ class EpoptesGui(object):
+@@ -1059,7 +1830,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(

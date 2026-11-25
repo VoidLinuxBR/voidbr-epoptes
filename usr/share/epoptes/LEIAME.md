@@ -123,7 +123,7 @@ Ajuda > Manual do VoidBR (ou F1) mostra este texto. Ajuda > Sobre mostra os cré
 |---|---|---|
 | X11 (qualquer ambiente) | sim | sim (x11vnc) |
 | Hyprland, Sway, river, labwc | sim (grim) | sim (wayvnc) |
-| GNOME com Wayland | sim (portal de captura) | sim (VNC do GNOME) |
+| GNOME com Wayland | a cada 60 s (portal) | sim (VNC do GNOME) |
 | KDE Plasma com Wayland | spectacle (não testado) | não |
 
 As outras funções (mensagem, bloquear tela, transmitir tela, terminal) seguem o Epoptes original e não foram testadas no Wayland.
@@ -153,7 +153,8 @@ Eles não são dependência obrigatória do pacote do cliente, porque só servem
 ### Miniatura: o portal de captura
 
 - Na primeira miniatura, o GNOME pergunta ao aluno "Permitir que aplicativos façam capturas de tela?". Clique em **Permitir**. A escolha fica gravada e não é perguntada de novo; ela pode ser mudada depois em Configurações > Privacidade.
-- Cada captura é feita sem janela e sem aviso. O arquivo que o portal gera é apagado logo em seguida, então nada se acumula em Imagens.
+- Cada captura faz o GNOME **piscar a tela e tocar o som de câmera** no aluno. É o aviso de captura do próprio GNOME e não dá para desligar pelo portal. Por isso, nos clientes GNOME, a miniatura se atualiza só **a cada 60 segundos** (nos outros, a cada 5). Para mudar, use thumbshots_gnome_seconds na seção [GUI] de ~/.config/epoptes/settings, no servidor (mínimo de 5).
+- O arquivo que o portal gera é apagado logo em seguida, então nada se acumula em Imagens.
 - O portal só oferece a captura se a configuração dele mandar o GNOME para o backend gnome. Um arquivo **~/.config/xdg-desktop-portal/portals.conf** criado para outro ambiente (por exemplo, com default=gtk;wlr, de Hyprland ou Sway) vale também no GNOME e tira a captura. A correção, sem mexer nos outros ambientes, é criar uma configuração própria do GNOME, que tem prioridade:
 
         printf '[preferred]\ndefault=gnome;gtk;\norg.freedesktop.impl.portal.Secret=gnome-keyring;\n' > ~/.config/xdg-desktop-portal/gnome-portals.conf
