@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..e073bab 100644
+index 720c958..2b5e1dd 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,37 @@
+@@ -4,10 +4,42 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -99,16 +99,21 @@ index 720c958..e073bab 100644
 +     100% e A+ no fim da barra de ferramentas e Ctrl +, Ctrl - e Ctrl 0.
 +     Vai de 70% a 200%, em passos de 10%, vale para todas as janelas
 +     do epoptes e fica salvo em font_scale, na secao [GUI] do settings.
++     Os icones da barra e dos menus crescem junto: os de arquivo sao
++     redesenhados a partir do SVG (os PNG de 16 px dos menus tem o SVG
++     equivalente em images/), e os do tema mudam de tamanho em pixels.
++     As miniaturas dos clientes continuam no controle proprio, embaixo.
  """
  from distutils.version import LooseVersion
  import os
 -import pipes
++import xml.etree.ElementTree as ET
 +import re
 +import shlex
  import random
  import socket
  import string
-@@ -28,6 +55,8 @@ from epoptes.ui.send_message import SendMessage
+@@ -28,6 +60,8 @@ from epoptes.ui.send_message import SendMessage
  from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
  
  LOG = logger.Logger(__file__)
@@ -117,7 +122,7 @@ index 720c958..e073bab 100644
  
  
  class EpoptesGui(object):
-@@ -79,6 +108,11 @@ class EpoptesGui(object):
+@@ -79,6 +113,11 @@ class EpoptesGui(object):
          self.vncserver_pwd = None
          self.vncviewer = None
          self.vncviewer_port = None
@@ -129,7 +134,7 @@ index 720c958..e073bab 100644
  
          self.builder = Gtk.Builder()
          self.builder.add_from_file('epoptes.ui')
-@@ -98,7 +132,11 @@ class EpoptesGui(object):
+@@ -98,7 +137,11 @@ class EpoptesGui(object):
          self.set_labels_order(1, 0, None)
          self.icv_clients.set_model(self.cstore)
          self.icv_clients.set_pixbuf_column(C_PIXBUF)
@@ -142,7 +147,7 @@ index 720c958..e073bab 100644
          self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
          self.on_icv_clients_selection_changed(None)
          self.icv_clients.enable_model_drag_source(
-@@ -167,6 +205,8 @@ class EpoptesGui(object):
+@@ -167,6 +210,8 @@ class EpoptesGui(object):
          mitem.set_active(True)
          self.get('cmi_show_real_names').set_active(self.show_real_names)
          self.mainwin.set_sensitive(False)
@@ -151,7 +156,7 @@ index 720c958..e073bab 100644
  
      def save_settings(self):
          """Helper function for on_imi_file_quit_activate."""
-@@ -276,38 +316,76 @@ class EpoptesGui(object):
+@@ -276,38 +321,76 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -258,7 +263,7 @@ index 720c958..e073bab 100644
  
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-@@ -629,6 +707,9 @@ class EpoptesGui(object):
+@@ -629,6 +712,9 @@ class EpoptesGui(object):
              single_client = True
          self.get('imi_clients_information').set_sensitive(single_client)
          self.get('tlb_clients_information').set_sensitive(single_client)
@@ -268,7 +273,7 @@ index 720c958..e073bab 100644
  
          if selected:
              self.get('mni_add_to_group').set_sensitive(True)
-@@ -764,6 +845,9 @@ class EpoptesGui(object):
+@@ -764,6 +850,9 @@ class EpoptesGui(object):
                  client_.set_offline()
  
          LOG.w("Disconnect from", handle)
@@ -278,7 +283,7 @@ index 720c958..e073bab 100644
          client = None
          for client in structs.clients:
              if client.hsystem == handle:
-@@ -813,12 +897,12 @@ class EpoptesGui(object):
+@@ -813,12 +902,12 @@ class EpoptesGui(object):
          if client.users:
              for hsession, user in client.users.items():
                  self.cstore.append(
@@ -293,7 +298,7 @@ index 720c958..e073bab 100644
                   self.imagetypes[client.type], client, ''])
  
      def fill_icon_view(self, group, keep_selection=False):
-@@ -923,9 +1007,11 @@ class EpoptesGui(object):
+@@ -923,9 +1012,11 @@ class EpoptesGui(object):
  
          # Update/fill the client information
          client.type, client.hostname = type_, host
@@ -305,7 +310,7 @@ index 720c958..e073bab 100644
          else:
              # This is a user epoptes-client
              client.add_user(user, name, handle)
-@@ -949,7 +1035,402 @@ class EpoptesGui(object):
+@@ -949,7 +1040,489 @@ class EpoptesGui(object):
              user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
          else:
              user = ''
@@ -349,7 +354,92 @@ index 720c958..e073bab 100644
 +        sep.show()
 +        item.show_all()
 +        self.mainwin.connect('key-press-event', self.on_font_zoom_key)
++        self.icones_zoom = self.find_zoom_icons()
++        # A coluna dos grupos tem largura fixa (150 px no .ui); cresce junto
++        self.paned_grupos = self.trv_groups.get_ancestor(Gtk.Paned)
++        self.ajustar_grupos(1.0, self.escala_fonte)
 +        self.aplicar_fonte()
++
++    def ajustar_grupos(self, antiga, nova):
++        """Scale the groups column width, keeping any manual adjustment."""
++        if self.paned_grupos and antiga:
++            self.paned_grupos.set_position(round(
++                self.paned_grupos.get_position() / antiga * nova))
++
++    def find_zoom_icons(self):
++        """Return [(image, svg file or None, original pixbuf or None)] for
++        the GtkImages of epoptes.ui, so that they follow the zoom."""
++        icones = []
++        try:
++            objetos = ET.parse('epoptes.ui').iter('object')
++        except (OSError, ET.ParseError) as exc:
++            LOG.e("Can't read epoptes.ui for the icons zoom:", exc)
++            return icones
++        for obj in objetos:
++            if obj.get('class') == 'GtkButton' and obj.get('id'):
++                # Imagem sem id dentro de um botao, como os +, -, setas e
++                # lupas embaixo das listas: pega pelo proprio botao.
++                filho = obj.find('./child/object[@class="GtkImage"]')
++                if filho is None or filho.get('id'):
++                    continue
++                botao = self.get(obj.get('id'))
++                img = botao.get_child() if botao else None
++                if not isinstance(img, Gtk.Image):
++                    continue
++                obj = filho
++            elif obj.get('class') == 'GtkImage' and obj.get('id'):
++                img = self.get(obj.get('id'))
++            else:
++                continue
++            props = {x.get('name'): x.text for x in obj.findall('property')}
++            if img is None:
++                continue
++            if props.get('pixbuf') and img.get_pixbuf():
++                arq = props['pixbuf']
++                if not arq.endswith('.svg'):
++                    svg = os.path.join('images', os.path.splitext(
++                        os.path.basename(arq))[0] + '.svg')
++                    if os.path.isfile(svg):
++                        arq = svg
++                icones.append((img, arq, img.get_pixbuf()))
++            elif props.get('icon_name'):
++                icones.append((img, None, None))
++            elif props.get('stock'):
++                # O pixel_size nao vale para icone "stock" no GTK3; guarda o
++                # nome equivalente no tema para trocar quando houver zoom.
++                icones.append((img, None, props['stock']))
++        return icones
++
++    def aplicar_icones(self, escala):
++        """Resize the toolbar and menu icons to follow the zoom."""
++        stock_tema = {'gtk-add': 'list-add', 'gtk-remove': 'list-remove',
++                      'gtk-go-up': 'go-up', 'gtk-go-down': 'go-down',
++                      'gtk-zoom-in': 'zoom-in', 'gtk-zoom-out': 'zoom-out',
++                      'gtk-missing-image': 'image-missing'}
++        for img, arq, orig in self.icones_zoom:
++            if orig is None or isinstance(orig, str):
++                tamanho = img.props.icon_size
++                if escala == 1.0:
++                    img.set_pixel_size(-1)
++                    if orig:
++                        img.set_from_stock(orig, tamanho)
++                else:
++                    if orig:
++                        img.set_from_icon_name(
++                            stock_tema.get(orig, orig), tamanho)
++                    _ok, largura, _a = Gtk.icon_size_lookup(tamanho)
++                    img.set_pixel_size(round(largura * escala))
++                continue
++            tam = round(orig.get_width() * escala)
++            if tam == orig.get_width():
++                img.set_from_pixbuf(orig)
++                continue
++            try:
++                img.set_from_pixbuf(
++                    GdkPixbuf.Pixbuf.new_from_file_at_size(arq, tam, tam))
++            except GLib.Error:
++                img.set_from_pixbuf(orig.scale_simple(
++                    tam, tam, GdkPixbuf.InterpType.BILINEAR))
 +
 +    def on_font_zoom_key(self, _widget, event):
 +        """Handle Ctrl +, Ctrl - and Ctrl 0 in the main window."""
@@ -375,6 +465,7 @@ index 720c958..e073bab 100644
 +        self.css_fonte.load_from_data((
 +            'window, window * { font-size: %.1fpt; }\n'
 +            % (base * escala)).encode('utf-8'))
++        self.aplicar_icones(escala)
 +        for janela in Gtk.Window.list_toplevels():
 +            janela.queue_resize()
 +        self.b_escala.set_label('%d%%' % round(escala * 100))
@@ -387,6 +478,7 @@ index 720c958..e073bab 100644
 +        nova = min(ESCALA_MAX, max(ESCALA_MIN, nova))
 +        if nova == self.escala_fonte and passo:
 +            return
++        self.ajustar_grupos(self.escala_fonte, nova)
 +        self.escala_fonte = nova
 +        self.aplicar_fonte()
 +        settings = config.settings
@@ -709,7 +801,7 @@ index 720c958..e073bab 100644
  
      def calculate_label(self, client, username=''):
          """Return the iconview label from a hostname/alias and a username,
-@@ -1012,6 +1493,16 @@ class EpoptesGui(object):
+@@ -1012,6 +1585,16 @@ class EpoptesGui(object):
                  LOG.d("I got a thumbshot from %s." % handle)
                  if not reply:
                      return
@@ -726,7 +818,7 @@ index 720c958..e073bab 100644
                  try:
                      rowstride, size, pixels = reply.split(b'\n', 2)
                      rowstride = int(rowstride)
-@@ -1059,7 +1550,7 @@ class EpoptesGui(object):
+@@ -1059,7 +1642,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(
@@ -735,6 +827,20 @@ index 720c958..e073bab 100644
  
          if (clients != [] or handles != []) and warning != '':
              if not self.confirmation_dialog(warning):
+diff --git a/usr/share/epoptes/about.ui b/usr/share/epoptes/about.ui
+index 22edcde..9c30a47 100644
+--- a/usr/share/epoptes/about.ui
++++ b/usr/share/epoptes/about.ui
+@@ -12,7 +12,8 @@
+     <property name="website">https://epoptes.org</property>
+     <property name="website_label">https://epoptes.org</property>
+     <property name="authors">Alkis Georgopoulos &lt;alkisg@gmail.com&gt;
+-Fotis Tsamis &lt;ftsamis@gmail.com&gt;</property>
++Fotis Tsamis &lt;ftsamis@gmail.com&gt;
++Vilmar Catafesta &lt;vcatafesta@gmail.com&gt; (VoidBR: suporte a Wayland e melhorias)</property>
+     <property name="translator_credits" translatable="yes">translator-credits</property>
+     <property name="artists">Andrew Wedderburn (application icon)</property>
+     <property name="logo_icon_name">epoptes</property>
 diff --git a/usr/share/epoptes/client-functions b/usr/share/epoptes/client-functions
 index d54ba3b..cf5ad23 100644
 --- a/usr/share/epoptes/client-functions
