@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..02190d3 100644
+index 720c958..e073bab 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,33 @@
+@@ -4,10 +4,37 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -95,6 +95,10 @@ index 720c958..02190d3 100644
 +     nao tem como atender (GNOME/KDE no Wayland, ou sem wayvnc/x11vnc).
 +  6. Item "Reconectar sessao": refaz a conexao da sessao (reconnect);
 +     numa conexao duplicada, so encerra a escolhida (reconnect drop).
++  7. Zoom da fonte da interface, como nos voidbr-*-tweaks: botoes A-,
++     100% e A+ no fim da barra de ferramentas e Ctrl +, Ctrl - e Ctrl 0.
++     Vai de 70% a 200%, em passos de 10%, vale para todas as janelas
++     do epoptes e fica salvo em font_scale, na secao [GUI] do settings.
  """
  from distutils.version import LooseVersion
  import os
@@ -104,7 +108,16 @@ index 720c958..02190d3 100644
  import random
  import socket
  import string
-@@ -79,6 +102,11 @@ class EpoptesGui(object):
+@@ -28,6 +55,8 @@ from epoptes.ui.send_message import SendMessage
+ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
+ 
+ LOG = logger.Logger(__file__)
++# VoidBR patch: limites do zoom da fonte, os mesmos dos voidbr-*-tweaks
++ESCALA_MIN, ESCALA_MAX = 0.7, 2.0
+ 
+ 
+ class EpoptesGui(object):
+@@ -79,6 +108,11 @@ class EpoptesGui(object):
          self.vncserver_pwd = None
          self.vncviewer = None
          self.vncviewer_port = None
@@ -116,7 +129,7 @@ index 720c958..02190d3 100644
  
          self.builder = Gtk.Builder()
          self.builder.add_from_file('epoptes.ui')
-@@ -98,7 +126,11 @@ class EpoptesGui(object):
+@@ -98,7 +132,11 @@ class EpoptesGui(object):
          self.set_labels_order(1, 0, None)
          self.icv_clients.set_model(self.cstore)
          self.icv_clients.set_pixbuf_column(C_PIXBUF)
@@ -129,15 +142,16 @@ index 720c958..02190d3 100644
          self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
          self.on_icv_clients_selection_changed(None)
          self.icv_clients.enable_model_drag_source(
-@@ -167,6 +199,7 @@ class EpoptesGui(object):
+@@ -167,6 +205,8 @@ class EpoptesGui(object):
          mitem.set_active(True)
          self.get('cmi_show_real_names').set_active(self.show_real_names)
          self.mainwin.set_sensitive(False)
 +        GLib.timeout_add_seconds(20, self.poll_graphical_users)
++        self.setup_font_zoom()
  
      def save_settings(self):
          """Helper function for on_imi_file_quit_activate."""
-@@ -276,38 +309,76 @@ class EpoptesGui(object):
+@@ -276,38 +316,76 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -244,7 +258,7 @@ index 720c958..02190d3 100644
  
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-@@ -629,6 +700,9 @@ class EpoptesGui(object):
+@@ -629,6 +707,9 @@ class EpoptesGui(object):
              single_client = True
          self.get('imi_clients_information').set_sensitive(single_client)
          self.get('tlb_clients_information').set_sensitive(single_client)
@@ -254,7 +268,7 @@ index 720c958..02190d3 100644
  
          if selected:
              self.get('mni_add_to_group').set_sensitive(True)
-@@ -764,6 +838,9 @@ class EpoptesGui(object):
+@@ -764,6 +845,9 @@ class EpoptesGui(object):
                  client_.set_offline()
  
          LOG.w("Disconnect from", handle)
@@ -264,7 +278,7 @@ index 720c958..02190d3 100644
          client = None
          for client in structs.clients:
              if client.hsystem == handle:
-@@ -813,12 +890,12 @@ class EpoptesGui(object):
+@@ -813,12 +897,12 @@ class EpoptesGui(object):
          if client.users:
              for hsession, user in client.users.items():
                  self.cstore.append(
@@ -279,7 +293,7 @@ index 720c958..02190d3 100644
                   self.imagetypes[client.type], client, ''])
  
      def fill_icon_view(self, group, keep_selection=False):
-@@ -923,9 +1000,11 @@ class EpoptesGui(object):
+@@ -923,9 +1007,11 @@ class EpoptesGui(object):
  
          # Update/fill the client information
          client.type, client.hostname = type_, host
@@ -291,12 +305,95 @@ index 720c958..02190d3 100644
          else:
              # This is a user epoptes-client
              client.add_user(user, name, handle)
-@@ -949,7 +1028,319 @@ class EpoptesGui(object):
+@@ -949,7 +1035,402 @@ class EpoptesGui(object):
              user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
          else:
              user = ''
 -        row[C_LABEL] = self.calculate_label(inst, user)
 +        row[C_LABEL] = self.label_markup(inst, user, row[C_SESSION_HANDLE])
++
++    # VoidBR patch: zoom da fonte, como nos voidbr-*-tweaks.
++    def setup_font_zoom(self):
++        """Add the A-/100%/A+ buttons and the Ctrl +/-/0 shortcuts."""
++        self.css_fonte = Gtk.CssProvider()
++        Gtk.StyleContext.add_provider_for_screen(
++            Gdk.Screen.get_default(), self.css_fonte,
++            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
++        try:
++            self.escala_fonte = min(ESCALA_MAX, max(ESCALA_MIN, float(
++                config.settings.get('GUI', 'font_scale', fallback='1.0'))))
++        except ValueError:
++            self.escala_fonte = 1.0
++        toolbar = self.get('tlb_clients_information').get_parent()
++        # Separador invisivel que expande: empurra os botoes para a direita
++        sep = Gtk.SeparatorToolItem(draw=False)
++        sep.set_expand(True)
++        toolbar.insert(sep, -1)
++        caixa = Gtk.Box()
++        caixa.get_style_context().add_class('linked')
++        self.b_menor = Gtk.Button(label='A\u2212',
++                                  tooltip_text='Diminuir a fonte (Ctrl -)')
++        self.b_escala = Gtk.Button(label='100%',
++                                   tooltip_text='Tamanho normal (Ctrl 0)')
++        self.b_maior = Gtk.Button(label='A+',
++                                  tooltip_text='Aumentar a fonte (Ctrl +)')
++        for btn, passo in ((self.b_menor, -1), (self.b_escala, 0),
++                           (self.b_maior, 1)):
++            btn.set_relief(Gtk.ReliefStyle.NONE)
++            btn.set_valign(Gtk.Align.CENTER)
++            btn.connect('clicked', lambda _b, p=passo: self.mudar_fonte(p))
++            caixa.pack_start(btn, False, False, 0)
++        item = Gtk.ToolItem()
++        item.add(caixa)
++        toolbar.insert(item, -1)
++        sep.show()
++        item.show_all()
++        self.mainwin.connect('key-press-event', self.on_font_zoom_key)
++        self.aplicar_fonte()
++
++    def on_font_zoom_key(self, _widget, event):
++        """Handle Ctrl +, Ctrl - and Ctrl 0 in the main window."""
++        if not event.state & Gdk.ModifierType.CONTROL_MASK:
++            return False
++        nome = Gdk.keyval_name(event.keyval)
++        if nome in ('plus', 'equal', 'KP_Add'):
++            self.mudar_fonte(1)
++        elif nome in ('minus', 'KP_Subtract'):
++            self.mudar_fonte(-1)
++        elif nome in ('0', 'KP_0', 'KP_Insert'):
++            self.mudar_fonte(0)
++        else:
++            return False
++        return True
++
++    def aplicar_fonte(self):
++        """Apply self.escala_fonte to all the epoptes windows."""
++        nome = Gtk.Settings.get_default().props.gtk_font_name or ''
++        achou = re.search(r'(\d+(?:\.\d+)?)\s*$', nome)
++        base = float(achou.group(1)) if achou else 11.0
++        escala = self.escala_fonte
++        self.css_fonte.load_from_data((
++            'window, window * { font-size: %.1fpt; }\n'
++            % (base * escala)).encode('utf-8'))
++        for janela in Gtk.Window.list_toplevels():
++            janela.queue_resize()
++        self.b_escala.set_label('%d%%' % round(escala * 100))
++        self.b_menor.set_sensitive(escala > ESCALA_MIN + 0.001)
++        self.b_maior.set_sensitive(escala < ESCALA_MAX - 0.001)
++
++    def mudar_fonte(self, passo):
++        """Change the font scale by passo*10%, or reset it if passo is 0."""
++        nova = 1.0 if passo == 0 else round(self.escala_fonte + 0.1 * passo, 2)
++        nova = min(ESCALA_MAX, max(ESCALA_MIN, nova))
++        if nova == self.escala_fonte and passo:
++            return
++        self.escala_fonte = nova
++        self.aplicar_fonte()
++        settings = config.settings
++        if not settings.has_section('GUI'):
++            settings.add_section('GUI')
++        settings.set('GUI', 'font_scale', str(nova))
++        config.write_ini_file(config.expand_filename('settings'), settings)
 +
 +    # VoidBR patch: selos de estado, dica e "Diagnosticar cliente".
 +    @staticmethod
@@ -612,7 +709,7 @@ index 720c958..02190d3 100644
  
      def calculate_label(self, client, username=''):
          """Return the iconview label from a hostname/alias and a username,
-@@ -1012,6 +1403,16 @@ class EpoptesGui(object):
+@@ -1012,6 +1493,16 @@ class EpoptesGui(object):
                  LOG.d("I got a thumbshot from %s." % handle)
                  if not reply:
                      return
@@ -629,7 +726,7 @@ index 720c958..02190d3 100644
                  try:
                      rowstride, size, pixels = reply.split(b'\n', 2)
                      rowstride = int(rowstride)
-@@ -1059,7 +1460,7 @@ class EpoptesGui(object):
+@@ -1059,7 +1550,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(
