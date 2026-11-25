@@ -122,21 +122,72 @@ Ajuda > Manual do VoidBR (ou F1) mostra este texto. Ajuda > Sobre mostra os cré
 | Ambiente do aluno | Miniatura | Observar/Assistir |
 |---|---|---|
 | X11 (qualquer ambiente) | sim | sim (x11vnc) |
-| Hyprland, Sway, river, labwc (wlroots) | sim (grim) | sim (wayvnc) |
-| GNOME com Wayland | não (bloqueada pelo GNOME 41+) | sim, pelo VNC do GNOME |
+| Hyprland, Sway, river, labwc | sim (grim) | sim (wayvnc) |
+| GNOME com Wayland | sim (portal de captura) | sim (VNC do GNOME) |
 | KDE Plasma com Wayland | spectacle (não testado) | não |
 
-No GNOME 41 ou mais novo, a captura de tela fica restrita aos componentes do próprio GNOME, por isso a miniatura não funciona lá. As outras funções (mensagem, bloquear tela, transmitir tela, terminal) seguem o Epoptes original e não foram testadas no Wayland.
+As outras funções (mensagem, bloquear tela, transmitir tela, terminal) seguem o Epoptes original e não foram testadas no Wayland.
 
-### Observar no GNOME com Wayland
+## GNOME com Wayland
 
-O GNOME não deixa programas de fora capturarem a tela; só o servidor VNC dele mesmo, o gnome-remote-desktop. O cliente o inicia apenas durante o Observar/Assistir e o encerra depois, devolvendo a configuração que o usuário tinha.
+O GNOME não deixa programas de fora capturarem a tela. O x11vnc e o wayvnc não funcionam nele, e desde o GNOME 41 a captura interna do GNOME Shell é recusada a outros programas ("Screenshot is not allowed"). Por isso, no GNOME, o Epoptes usa dois serviços do próprio GNOME: o portal de captura, para a miniatura, e o servidor VNC do GNOME (gnome-remote-desktop), para Observar e Assistir.
 
-- Instale no cliente o pacote gnome-remote-desktop e o secret-tool (pacote libsecret). Eles não são dependência do pacote do cliente; sem eles, o epoptes avisa.
-- A senha de cada Observar é gerada pelo servidor e guardada no chaveiro do GNOME. Se o chaveiro estiver trancado, aparece na tela do aluno um pedido para destrancá-lo, e o Observar espera até 60 segundos.
-- O GNOME mostra ao aluno um botão laranja no canto superior direito enquanto a tela é vista; clicando no quadrado, o aluno encerra o Observar.
-- Se o aluno já estiver com o compartilhamento de tela do GNOME ligado, o Observar não abre.
-- O visualizador do servidor recebe a senha sozinho se for o TigerVNC; outros visualizadores pedem a senha.
+### Pacotes no cliente
+
+| Pacote | Para quê |
+|---|---|
+| xdg-desktop-portal-gnome | miniatura (portal de captura) |
+| gnome-remote-desktop | Observar e Assistir |
+| libsecret (secret-tool) | guardar a senha do Observar/Assistir no chaveiro |
+
+No Void, instale com:
+
+    sudo xbps-install -S xdg-desktop-portal-gnome gnome-remote-desktop libsecret
+
+No Arch/Chili eles aparecem como dependências opcionais do chili-epoptes-client:
+
+    sudo pacman -S --asdeps xdg-desktop-portal-gnome gnome-remote-desktop libsecret
+
+Eles não são dependência obrigatória do pacote do cliente, porque só servem em clientes com GNOME e trazem bastante coisa junto. Sem eles, o servidor avisa: o selo "Miniatura falhou" e a dica mostram o pacote que falta, e o Observar avisa antes de abrir.
+
+### Miniatura: o portal de captura
+
+- Na primeira miniatura, o GNOME pergunta ao aluno "Permitir que aplicativos façam capturas de tela?". Clique em **Permitir**. A escolha fica gravada e não é perguntada de novo; ela pode ser mudada depois em Configurações > Privacidade.
+- Cada captura é feita sem janela e sem aviso. O arquivo que o portal gera é apagado logo em seguida, então nada se acumula em Imagens.
+- O portal só oferece a captura se a configuração dele mandar o GNOME para o backend gnome. Um arquivo **~/.config/xdg-desktop-portal/portals.conf** criado para outro ambiente (por exemplo, com default=gtk;wlr, de Hyprland ou Sway) vale também no GNOME e tira a captura. A correção, sem mexer nos outros ambientes, é criar uma configuração própria do GNOME, que tem prioridade:
+
+        printf '[preferred]\ndefault=gnome;gtk;\norg.freedesktop.impl.portal.Secret=gnome-keyring;\n' > ~/.config/xdg-desktop-portal/gnome-portals.conf
+
+  Depois, saia e entre de novo na sessão.
+
+### Observar e Assistir: o servidor VNC do GNOME
+
+Como funciona, a cada Observar ou Assistir:
+
+1. O servidor do Epoptes gera uma senha nova e a envia ao cliente.
+2. O cliente guarda essa senha no chaveiro do GNOME, liga o VNC do GNOME (só observar no Observar; com mouse e teclado no Assistir) e inicia o servidor VNC do GNOME numa porta livre.
+3. O cliente liga esse servidor ao do Epoptes com o socat, e o TigerVNC do servidor recebe a senha sozinho.
+4. Quando o professor fecha a janela, ou o aluno encerra pelo indicador, o cliente desliga o servidor VNC do GNOME e devolve a configuração e a senha que o usuário tinha antes.
+
+O que o aluno vê: enquanto a tela é vista, o GNOME mostra um botão laranja no canto superior direito. Clicando no quadrado dele, o aluno encerra o Observar. Isso é do GNOME e não dá para esconder.
+
+### O chaveiro do GNOME
+
+O Observar/Assistir depende do chaveiro (gnome-keyring) estar rodando e destrancado, porque é nele que a senha do VNC fica.
+
+- O chaveiro destranca sozinho no login quando tem a **mesma senha do usuário**. É o normal numa instalação nova.
+- Se ele ficou com outra senha (por exemplo, depois de trocar a senha do usuário), aparece na tela do aluno o pedido "Authentication required" para destrancá-lo, e o Observar espera até 60 segundos antes de desistir. Para não acontecer de novo: no pedido, digite a senha do chaveiro e marque **"Automatically unlock this keyring whenever I'm logged in"**; ou, se ninguém lembra a senha dele, recrie o chaveiro:
+
+        mv ~/.local/share/keyrings ~/.local/share/keyrings.antigo
+
+  e saia e entre de novo na sessão. O GNOME cria um chaveiro novo com a senha do login, já destrancado. Isso apaga as senhas guardadas no chaveiro antigo (de Wi-Fi, navegador...); a pasta antiga fica guardada.
+- Se a máquina também tiver a carteira do KDE (kwallet) e o chaveiro do GNOME não estiver rodando, quem responde pode ser a carteira do KDE, pedindo a senha de uma carteira "kdewallet". Nesse caso, cancele e saia e entre de novo no GNOME, para o chaveiro dele subir.
+
+### Outros cuidados
+
+- Se o aluno já estiver com o compartilhamento de tela do GNOME ligado (Configurações > Compartilhamento), o Observar não abre, porque os dois disputam o mesmo serviço.
+- O visualizador do servidor só recebe a senha sozinho se for o TigerVNC; outros visualizadores pedem a senha.
+- O grdctl (a ferramenta do gnome-remote-desktop) cai com "falha de segmentação" no Void, que não tem systemd. O Epoptes não o usa: configura pelo gsettings e guarda a senha pelo secret-tool.
 
 ## Diagnóstico no cliente
 
@@ -156,7 +207,13 @@ Ele confere: arquivos do pacote, serviço habilitado e rodando (runit ou systemd
 
 **O epoptes avisa que o usuário não está no grupo epoptes.** Saia da sessão e entre de novo; no GNOME, reinicie a máquina.
 
-**Miniatura falhou.** O motivo aparece na dica. Em Hyprland e Sway é o grim; no GNOME com Wayland a miniatura não funciona (veja a tabela acima).
+**Miniatura falhou.** O motivo aparece na dica. Em Hyprland e Sway é o grim. No GNOME, veja "Miniatura: o portal de captura": falta o xdg-desktop-portal-gnome, a permissão foi negada ou um portals.conf manda o GNOME para outro backend.
+
+**Observar não abre no GNOME.** Quase sempre é o chaveiro trancado (veja "O chaveiro do GNOME"). O andamento fica em $XDG_RUNTIME_DIR/epoptes-client/ na máquina do aluno: o arquivo grd.log só existe se o servidor VNC do GNOME chegou a iniciar.
+
+**Máquina aparece em dobro depois de sair e entrar de novo.** Uma conexão da sessão anterior pode ter sobrado. As versões novas encerram essa sobra sozinhas; se acontecer, use Reconectar sessão na conexão mais antiga.
+
+**Máquinas virtuais aparecem como uma só.** O Epoptes identifica cada máquina pelo MAC. VMs do QEMU sem MAC próprio têm todas o mesmo (52:54:00:12:34:56); dê um MAC diferente a cada uma (o chili-fr já faz isso).
 
 **Cliente com a rede lenta para subir (Tailscale, VPN).** O cliente espera o nome do servidor resolver e tenta de novo sozinho; não precisa reiniciar nada.
 
