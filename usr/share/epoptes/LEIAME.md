@@ -113,6 +113,22 @@ Nos menus, Observar é **Monitorar usuário** e Assistir é **Auxiliar usuário*
 
 Os botões A−, 100% e A+, à direita da barra de ferramentas, e os atalhos Ctrl +, Ctrl − e Ctrl 0 aumentam e diminuem a fonte e os ícones de todas as janelas do epoptes, de 70% a 200%. O tamanho escolhido fica salvo (font_scale em ~/.config/epoptes/settings).
 
+### Configurações
+
+O menu **Configurações > Configurações do Epoptes...** reúne os ajustes da interface. Tudo vale na hora e fica guardado na seção [GUI] do ~/.config/epoptes/settings de cada professor. O botão **Restaurar padrões** volta tudo ao padrão (menos o título das mensagens).
+
+| Aba | Configuração | Padrão |
+|---|---|---|
+| Miniaturas | intervalo nos clientes GNOME com Wayland | 60 s |
+| Miniaturas | intervalo nos demais clientes | 5 s (THUMBSHOT_MS do sistema) |
+| Auxiliar e mensagens | prender teclado e mouse do aluno | desligado |
+| Auxiliar e mensagens | título e formatação das mensagens | o da última |
+| Aparência | tamanho da fonte e dos ícones | 100% |
+| Aparência | nome real dos usuários nas etiquetas | desligado |
+| Avançado | conferir os usuários logados a cada | 20 s |
+
+No GNOME, cada miniatura pisca a tela e toca o som de câmera no aluno; por isso lá o intervalo é maior. O intervalo dos demais clientes que vale para todos os professores fica em /etc/default/epoptes (THUMBSHOT_MS, em milissegundos); o da janela vale só para o professor que o ajustou.
+
 ### Ajuda
 
 Ajuda > Manual do VoidBR (ou F1) mostra este texto. Ajuda > Sobre mostra os créditos.
@@ -153,7 +169,7 @@ Eles não são dependência obrigatória do pacote do cliente, porque só servem
 ### Miniatura: o portal de captura
 
 - Na primeira miniatura, o GNOME pergunta ao aluno "Permitir que aplicativos façam capturas de tela?". Clique em **Permitir**. A escolha fica gravada e não é perguntada de novo; ela pode ser mudada depois em Configurações > Privacidade.
-- Cada captura faz o GNOME **piscar a tela e tocar o som de câmera** no aluno. É o aviso de captura do próprio GNOME e não dá para desligar pelo portal. Por isso, nos clientes GNOME, a miniatura se atualiza só **a cada 60 segundos** (nos outros, a cada 5). Para mudar, use thumbshots_gnome_seconds na seção [GUI] de ~/.config/epoptes/settings, no servidor (mínimo de 5).
+- Cada captura faz o GNOME **piscar a tela e tocar o som de câmera** no aluno. É o aviso de captura do próprio GNOME e não dá para desligar pelo portal. Por isso, nos clientes GNOME, a miniatura se atualiza só **a cada 60 segundos** (nos outros, a cada 5). Para mudar, use Configurações > Configurações do Epoptes..., aba Miniaturas, no servidor (mínimo de 5 s).
 - O arquivo que o portal gera é apagado logo em seguida, então nada se acumula em Imagens.
 - O portal só oferece a captura se a configuração dele mandar o GNOME para o backend gnome. Um arquivo **~/.config/xdg-desktop-portal/portals.conf** criado para outro ambiente (por exemplo, com default=gtk;wlr, de Hyprland ou Sway) vale também no GNOME e tira a captura. A correção, sem mexer nos outros ambientes, é criar uma configuração própria do GNOME, que tem prioridade:
 

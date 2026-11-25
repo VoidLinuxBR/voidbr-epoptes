@@ -66,10 +66,10 @@ index ac7b570..848abb8 100755
      path = os.path.expanduser('~/.config')
      if not os.path.isdir(path):
 diff --git a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-index 720c958..0fe45e9 100644
+index 720c958..608b391 100644
 --- a/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
 +++ b/usr/lib/python3.14/site-packages/epoptes/ui/gui.py
-@@ -4,10 +4,55 @@
+@@ -4,10 +4,61 @@
  # SPDX-License-Identifier: GPL-3.0-or-later
  """
  Epoptes GUI class.
@@ -116,6 +116,12 @@ index 720c958..0fe45e9 100644
 + 10. Miniatura de cliente GNOME com Wayland a cada 60 s (ajustavel em
 +     thumbshots_gnome_seconds), em vez de 5 s: la ela vem do portal de
 +     captura, que pisca a tela e toca o som de camera a cada captura.
++ 11. Menu Configuracoes: janela com os ajustes que antes so davam para mudar
++     no arquivo settings (ou nem isso): intervalos das miniaturas (GNOME e
++     demais clientes), prender teclado e mouse no Auxiliar usuario, titulo
++     e formatacao das mensagens, zoom da fonte, nomes reais e o intervalo
++     da conferencia de usuarios logados. Tudo vale na hora e fica na secao
++     [GUI] do ~/.config/epoptes/settings de cada professor.
  """
  from distutils.version import LooseVersion
  import os
@@ -126,7 +132,7 @@ index 720c958..0fe45e9 100644
  import random
  import socket
  import string
-@@ -21,13 +66,16 @@ from epoptes.ui.about import About
+@@ -21,13 +72,16 @@ from epoptes.ui.about import About
  from epoptes.ui.benchmark import Benchmark
  from epoptes.ui.client_information import ClientInformation
  from epoptes.ui.common import gettext as _
@@ -144,7 +150,7 @@ index 720c958..0fe45e9 100644
  
  
  class EpoptesGui(object):
-@@ -79,6 +127,11 @@ class EpoptesGui(object):
+@@ -79,6 +133,11 @@ class EpoptesGui(object):
          self.vncserver_pwd = None
          self.vncviewer = None
          self.vncviewer_port = None
@@ -156,7 +162,7 @@ index 720c958..0fe45e9 100644
  
          self.builder = Gtk.Builder()
          self.builder.add_from_file('epoptes.ui')
-@@ -98,7 +151,11 @@ class EpoptesGui(object):
+@@ -98,7 +157,11 @@ class EpoptesGui(object):
          self.set_labels_order(1, 0, None)
          self.icv_clients.set_model(self.cstore)
          self.icv_clients.set_pixbuf_column(C_PIXBUF)
@@ -169,11 +175,12 @@ index 720c958..0fe45e9 100644
          self.cstore.set_sort_column_id(C_LABEL, Gtk.SortType.ASCENDING)
          self.on_icv_clients_selection_changed(None)
          self.icv_clients.enable_model_drag_source(
-@@ -167,6 +224,13 @@ class EpoptesGui(object):
+@@ -167,6 +230,14 @@ class EpoptesGui(object):
          mitem.set_active(True)
          self.get('cmi_show_real_names').set_active(self.show_real_names)
          self.mainwin.set_sensitive(False)
-+        GLib.timeout_add_seconds(20, self.poll_graphical_users)
++        self.gusers_timer = GLib.timeout_add_seconds(
++            self.gusers_interval(), self.poll_graphical_users)
 +        self.setup_font_zoom()
 +        # VoidBR patch: F1 abre o manual (e aparece no menu)
 +        atalhos = Gtk.AccelGroup()
@@ -183,7 +190,7 @@ index 720c958..0fe45e9 100644
  
      def save_settings(self):
          """Helper function for on_imi_file_quit_activate."""
-@@ -276,38 +340,86 @@ class EpoptesGui(object):
+@@ -276,38 +347,86 @@ class EpoptesGui(object):
  
      def reverse_connection(self, cmd, *args):
          """Helper function for on_imi_broadcasts_*_activate."""
@@ -300,7 +307,7 @@ index 720c958..0fe45e9 100644
  
      def on_imi_broadcasts_monitor_user_activate(self, _widget):
          """Handle imi_sbroadcasts_monitor_user.activate event."""
-@@ -504,6 +616,100 @@ class EpoptesGui(object):
+@@ -504,6 +623,100 @@ class EpoptesGui(object):
          subprocess.Popen('./remote_assistance.py',
                           cwd='/usr/share/epoptes-client')
  
@@ -401,7 +408,7 @@ index 720c958..0fe45e9 100644
      def on_imi_help_about_activate(self, _widget):
          """Handle imi_help_about_activate.activate event."""
          if not self.about:
-@@ -629,6 +835,9 @@ class EpoptesGui(object):
+@@ -629,6 +842,9 @@ class EpoptesGui(object):
              single_client = True
          self.get('imi_clients_information').set_sensitive(single_client)
          self.get('tlb_clients_information').set_sensitive(single_client)
@@ -411,7 +418,7 @@ index 720c958..0fe45e9 100644
  
          if selected:
              self.get('mni_add_to_group').set_sensitive(True)
-@@ -764,6 +973,9 @@ class EpoptesGui(object):
+@@ -764,6 +980,9 @@ class EpoptesGui(object):
                  client_.set_offline()
  
          LOG.w("Disconnect from", handle)
@@ -421,7 +428,7 @@ index 720c958..0fe45e9 100644
          client = None
          for client in structs.clients:
              if client.hsystem == handle:
-@@ -813,12 +1025,12 @@ class EpoptesGui(object):
+@@ -813,12 +1032,12 @@ class EpoptesGui(object):
          if client.users:
              for hsession, user in client.users.items():
                  self.cstore.append(
@@ -436,7 +443,7 @@ index 720c958..0fe45e9 100644
                   self.imagetypes[client.type], client, ''])
  
      def fill_icon_view(self, group, keep_selection=False):
-@@ -923,9 +1135,11 @@ class EpoptesGui(object):
+@@ -923,9 +1142,11 @@ class EpoptesGui(object):
  
          # Update/fill the client information
          client.type, client.hostname = type_, host
@@ -448,7 +455,7 @@ index 720c958..0fe45e9 100644
          else:
              # This is a user epoptes-client
              client.add_user(user, name, handle)
-@@ -949,7 +1163,541 @@ class EpoptesGui(object):
+@@ -949,7 +1170,702 @@ class EpoptesGui(object):
              user = row[C_INSTANCE].users[row[C_SESSION_HANDLE]][label]
          else:
              user = ''
@@ -662,14 +669,175 @@ index 720c958..0fe45e9 100644
 +        nova = min(ESCALA_MAX, max(ESCALA_MIN, nova))
 +        if nova == self.escala_fonte and passo:
 +            return
++        self.definir_escala(nova)
++
++    def definir_escala(self, nova):
++        """Apply and save a font scale (0.7 to 2.0)."""
++        nova = min(ESCALA_MAX, max(ESCALA_MIN, round(nova, 2)))
 +        self.ajustar_grupos(self.escala_fonte, nova)
 +        self.escala_fonte = nova
 +        self.aplicar_fonte()
++        self.salvar_config('font_scale', nova)
++
++    @staticmethod
++    def salvar_config(chave, valor):
++        """Save a [GUI] setting right away (None removes it)."""
 +        settings = config.settings
 +        if not settings.has_section('GUI'):
 +            settings.add_section('GUI')
-+        settings.set('GUI', 'font_scale', str(nova))
++        if valor is None:
++            settings.remove_option('GUI', chave)
++        else:
++            settings.set('GUI', chave, str(valor))
 +        config.write_ini_file(config.expand_filename('settings'), settings)
++
++    def gusers_interval(self):
++        """Seconds between the logged in users checks."""
++        return max(5, config.settings.getint(
++            'GUI', 'graphical_users_seconds', fallback=20))
++
++    def on_imi_settings_activate(self, _widget):
++        """Handle imi_settings.activate event: the settings window."""
++        gui = config.settings.getint
++        padrao_ts = int(config.system['THUMBSHOT_MS']) // 1000 or 1
++        dlg = Gtk.Dialog(title='Configura\u00e7\u00f5es do Epoptes',
++                         transient_for=self.mainwin)
++        btn_padrao = dlg.add_button('Restaurar padr\u00f5es', 1)
++        dlg.add_button('Fechar', Gtk.ResponseType.CLOSE)
++        abas = Gtk.Notebook(border_width=6)
++        dlg.get_content_area().pack_start(abas, True, True, 0)
++        widgets = {}
++
++        def aba(titulo):
++            grade = Gtk.Grid(row_spacing=10, column_spacing=12,
++                             border_width=12)
++            abas.append_page(grade, Gtk.Label(label=titulo))
++            return grade
++
++        def numero(grade, linha, texto, chave, valor, minimo, maximo,
++                   dica, passo=1, unidade='s'):
++            rotulo = Gtk.Label(label=texto, xalign=0, hexpand=True,
++                               tooltip_text=dica)
++            ajuste = Gtk.Adjustment(value=valor, lower=minimo, upper=maximo,
++                                    step_increment=passo,
++                                    page_increment=passo * 10)
++            spin = Gtk.SpinButton(adjustment=ajuste, numeric=True,
++                                  tooltip_text=dica)
++            grade.attach(rotulo, 0, linha, 1, 1)
++            grade.attach(spin, 1, linha, 1, 1)
++            grade.attach(Gtk.Label(label=unidade, xalign=0), 2, linha, 1, 1)
++            widgets[chave] = spin
++            return spin
++
++        def opcao(grade, linha, texto, chave, valor, dica):
++            check = Gtk.CheckButton(label=texto, active=valor,
++                                    tooltip_text=dica)
++            grade.attach(check, 0, linha, 3, 1)
++            widgets[chave] = check
++            return check
++
++        # Miniaturas
++        grade = aba('Miniaturas')
++        numero(grade, 0, 'Clientes GNOME com Wayland', 'thumbshots_gnome_seconds',
++               gui('GUI', 'thumbshots_gnome_seconds', fallback=60), 5, 3600,
++               'No GNOME cada miniatura pisca a tela e toca o som de '
++               'c\u00e2mera no aluno (\u00e9 do pr\u00f3prio GNOME). Padr\u00e3o: 60 s.')
++        numero(grade, 1, 'Demais clientes', 'thumbshots_seconds',
++               gui('GUI', 'thumbshots_seconds', fallback=padrao_ts), 1, 600,
++               'X11, Hyprland, Sway e outros. Padr\u00e3o: %d s (o valor do '
++               'sistema, em /etc/default/epoptes).' % padrao_ts)
++        grade.attach(Gtk.Label(
++            label='<small>Tempo entre uma miniatura e a pr\u00f3xima de cada '
++                  'm\u00e1quina.</small>', use_markup=True, xalign=0),
++            0, 2, 3, 1)
++
++        # Auxiliar e mensagens
++        grade = aba('Auxiliar e mensagens')
++        opcao(grade, 0, 'Prender o teclado e o mouse do aluno no Auxiliar '
++              'usu\u00e1rio', 'grabkbdptr',
++              config.settings.getboolean('GUI', 'grabkbdptr', fallback=False),
++              'Enquanto o professor auxilia, o aluno n\u00e3o usa o '
++              'pr\u00f3prio teclado e mouse.')
++        grade.attach(Gtk.Label(label='T\u00edtulo padr\u00e3o das mensagens',
++                               xalign=0), 0, 1, 1, 1)
++        titulo = Gtk.Entry(hexpand=True, text=config.settings.get(
++            'GUI', 'messages_default_title', fallback=''))
++        grade.attach(titulo, 1, 1, 2, 1)
++        widgets['messages_default_title'] = titulo
++        opcao(grade, 2, 'Usar formata\u00e7\u00e3o (markup do Pango) nas mensagens',
++              'messages_use_markup',
++              config.settings.getboolean('GUI', 'messages_use_markup',
++                                         fallback=False),
++              'Permite <b>negrito</b>, <i>it\u00e1lico</i> e cores no texto.')
++
++        # Aparencia
++        grade = aba('Apar\u00eancia')
++        numero(grade, 0, 'Tamanho da fonte e dos \u00edcones', 'font_scale',
++               round(self.escala_fonte * 100), ESCALA_MIN * 100,
++               ESCALA_MAX * 100, 'O mesmo dos bot\u00f5es A\u2212 / A+ '
++               '(Ctrl +, Ctrl \u2212, Ctrl 0).', passo=10, unidade='%')
++        opcao(grade, 1, 'Mostrar o nome real dos usu\u00e1rios nas etiquetas',
++              'show_real_names', self.show_real_names,
++              'O mesmo do menu Etiquetas.')
++
++        # Avancado
++        grade = aba('Avan\u00e7ado')
++        numero(grade, 0, 'Conferir os usu\u00e1rios logados a cada',
++               'graphical_users_seconds', self.gusers_interval(), 5, 600,
++               '\u00c9 o que mostra o selo "Sess\u00e3o n\u00e3o conectou". '
++               'Padr\u00e3o: 20 s.')
++
++        def aplicar(_widget, chave):
++            w = widgets[chave]
++            if chave == 'font_scale':
++                self.definir_escala(w.get_value_as_int() / 100)
++            elif chave == 'show_real_names':
++                self.get('cmi_show_real_names').set_active(w.get_active())
++                self.salvar_config(chave, w.get_active())
++            elif isinstance(w, Gtk.SpinButton):
++                self.salvar_config(chave, w.get_value_as_int())
++                if chave == 'graphical_users_seconds':
++                    GLib.source_remove(self.gusers_timer)
++                    self.gusers_timer = GLib.timeout_add_seconds(
++                        self.gusers_interval(), self.poll_graphical_users)
++            elif isinstance(w, Gtk.CheckButton):
++                self.salvar_config(chave, w.get_active())
++            else:
++                self.salvar_config(chave, w.get_text())
++
++        for chave, w in widgets.items():
++            if isinstance(w, Gtk.SpinButton):
++                w.connect('value-changed', aplicar, chave)
++            elif isinstance(w, Gtk.CheckButton):
++                w.connect('toggled', aplicar, chave)
++            else:
++                w.connect('changed', aplicar, chave)
++
++        def resposta(_dlg, codigo):
++            if codigo != 1:
++                dlg.destroy()
++                return
++            padroes = {'thumbshots_gnome_seconds': 60,
++                       'thumbshots_seconds': padrao_ts,
++                       'grabkbdptr': False, 'messages_use_markup': False,
++                       'messages_default_title': config.settings.get(
++                           'GUI', 'messages_default_title', fallback=''),
++                       'font_scale': 100, 'show_real_names': False,
++                       'graphical_users_seconds': 20}
++            for chave, valor in padroes.items():
++                w = widgets[chave]
++                if isinstance(w, Gtk.SpinButton):
++                    w.set_value(valor)
++                elif isinstance(w, Gtk.CheckButton):
++                    w.set_active(valor)
++            # Quem segue o padrao do sistema nao fica gravado
++            self.salvar_config('thumbshots_seconds', None)
++
++        btn_padrao.set_tooltip_text(
++            'Volta todos os valores ao padr\u00e3o (menos o t\u00edtulo das '
++            'mensagens).')
++        dlg.connect('response', resposta)
++        dlg.show_all()
 +
 +    # VoidBR patch: selos de estado, dica e "Diagnosticar cliente".
 +    @staticmethod
@@ -991,7 +1159,7 @@ index 720c958..0fe45e9 100644
  
      def calculate_label(self, client, username=''):
          """Return the iconview label from a hostname/alias and a username,
-@@ -1000,6 +1748,19 @@ class EpoptesGui(object):
+@@ -1000,6 +1916,21 @@ class EpoptesGui(object):
              del self.current_thumbshots[handle]
          return False
  
@@ -1006,12 +1174,14 @@ index 720c958..0fe45e9 100644
 +                'GNOME' in info.get('desktop', '').upper().split(':'):
 +            return 1000 * max(5, config.settings.getint(
 +                'GUI', 'thumbshots_gnome_seconds', fallback=60))
-+        return int(config.system['THUMBSHOT_MS'])
++        return 1000 * max(1, config.settings.getint(
++            'GUI', 'thumbshots_seconds',
++            fallback=int(config.system['THUMBSHOT_MS']) // 1000 or 1))
 +
      def got_thumbshot(self, handle, reply):
          """Callback after running`thumbshot` on a client."""
          for i in self.cstore:
-@@ -1007,11 +1768,21 @@ class EpoptesGui(object):
+@@ -1007,11 +1938,21 @@ class EpoptesGui(object):
                  # Ask for a new thumbshot THUMBSHOT_MS msec after the last one.
                  # So if the client is too stressed and needs e.g. 7 secs to
                  # send a thumbshot, we'll ask for one every 12 secs.
@@ -1034,7 +1204,7 @@ index 720c958..0fe45e9 100644
                  try:
                      rowstride, size, pixels = reply.split(b'\n', 2)
                      rowstride = int(rowstride)
-@@ -1059,7 +1830,7 @@ class EpoptesGui(object):
+@@ -1059,7 +2000,7 @@ class EpoptesGui(object):
          # ${GUI_PY} must be unquoted, don't pass it as list
          if isinstance(command, list) and len(command) > 0:
              command = '%s %s' % (command[0], ' '.join(
@@ -1767,10 +1937,10 @@ index d54ba3b..546062e 100644
      trap "on_signal $i" $i
  done
 diff --git a/usr/share/epoptes/epoptes.ui b/usr/share/epoptes/epoptes.ui
-index 5840773..fdc1b6e 100644
+index 5840773..ba26367 100644
 --- a/usr/share/epoptes/epoptes.ui
 +++ b/usr/share/epoptes/epoptes.ui
-@@ -720,6 +720,24 @@
+@@ -720,6 +720,47 @@
                          <signal name="activate" handler="on_imi_clients_information_activate" swapped="no"/>
                        </object>
                      </child>
@@ -1792,10 +1962,33 @@ index 5840773..fdc1b6e 100644
 +                        <signal name="activate" handler="on_imi_clients_reconnect_activate" swapped="no"/>
 +                      </object>
 +                    </child>
++                  </object>
++                </child>
++              </object>
++            </child>
++            <child>
++              <object class="GtkMenuItem" id="mni_settings">
++                <property name="visible">True</property>
++                <property name="can_focus">False</property>
++                <property name="label">Co_nfigurações</property>
++                <property name="use_underline">True</property>
++                <child type="submenu">
++                  <object class="GtkMenu">
++                    <property name="visible">True</property>
++                    <property name="can_focus">False</property>
++                    <child>
++                      <object class="GtkMenuItem" id="imi_settings">
++                        <property name="visible">True</property>
++                        <property name="can_focus">False</property>
++                        <property name="label">Configurações do _Epoptes...</property>
++                        <property name="use_underline">True</property>
++                        <signal name="activate" handler="on_imi_settings_activate" swapped="no"/>
++                      </object>
++                    </child>
                    </object>
                  </child>
                </object>
-@@ -734,6 +752,21 @@
+@@ -734,6 +775,21 @@
                    <object class="GtkMenu">
                      <property name="visible">True</property>
                      <property name="can_focus">False</property>
