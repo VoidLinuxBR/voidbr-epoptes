@@ -32,7 +32,7 @@ depends=(
 	x11vnc
 	xterm
 )
-makedepends=(git patch)
+makedepends=(git patch python)
 optdepends=('xfce4-notifyd: XFCE notification support')
 provides=(epoptes)
 conflicts=(epoptes)
@@ -98,6 +98,13 @@ package() {
 	# post_install, para o upgrade nao sobrescrever a configuracao local.
 	rm -rf "${stage}/etc/default"
 	install -Dm644 "etc/default/epoptes" "${pkgdir}/etc/default/epoptes"
+	# Os arquivos Python estao versionados em usr/lib/python3.14. Se o python
+	# de quem gera o pacote for outro (3.15...), move para o caminho certo.
+	local pyver
+	pyver=$(python -c 'import sys; print("python%d.%d" % sys.version_info[:2])')
+	if [ -n "$pyver" ] && [ "$pyver" != python3.14 ] && [ -d "${stage}/usr/lib/python3.14" ]; then
+		mv "${stage}/usr/lib/python3.14" "${stage}/usr/lib/${pyver}"
+	fi
 	find "${stage}" -type d -name __pycache__ -prune -exec rm -rf {} +
 
 	# Install license file if present

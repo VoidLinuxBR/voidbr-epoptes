@@ -5,7 +5,7 @@ pkgver=$(date +%Y%m%d)
 pkgrel=$(date +%H%M)
 pkgdesc='An opensource computer lab management and monitoring tool (com suporte a Wayland nos clientes: thumbshots e observar/assistir)'
 replaces=(epoptes)
-makedepends=(git python3-distutils-extra intltool patch)
+makedepends=(git python3 python3-distutils-extra intltool patch)
 url="https://github.com/voidlinuxbr/$pkgname"
 source=(
 	"git+${url}.git"
@@ -78,6 +78,16 @@ package() {
 			cp -a "${_pkgsrc}/${dir}" "$DESTDIR/"
 		fi
 	done
+
+	# VoidBR: os arquivos Python estao versionados em usr/lib/python3.14. Se o
+	# python3 de quem gera o pacote for outro (3.15...), move para o caminho
+	# certo; os .pyc antigos sao descartados (o Python gera de novo).
+	local pyver
+	pyver=$(python3 -c 'import sys; print("python%d.%d" % sys.version_info[:2])')
+	if [ -n "$pyver" ] && [ "$pyver" != python3.14 ] && [ -d "$DESTDIR/usr/lib/python3.14" ]; then
+		mv "$DESTDIR/usr/lib/python3.14" "$DESTDIR/usr/lib/$pyver"
+		find "$DESTDIR/usr/lib/$pyver" -type d -name __pycache__ -prune -exec rm -rf {} +
+	fi
 }
 pre_install() {
 	log "Iniciando instalação"
@@ -96,6 +106,9 @@ post_install() {
 			-newkey rsa:4096 -days $(($(date --utc +%s) / 86400 + 3652)) \
 			-keyout /etc/epoptes/server.key -out /etc/epoptes/server.crt
 		chmod 600 /etc/epoptes/server.key
+		log "Certificado novo gerado em /etc/epoptes. Clientes que ja usavam este"
+		log "servidor precisam busca-lo: em cada cliente rode ${YELLOW}sudo epoptes-client -c${CYAN}"
+		log "e reinicie o servico epoptes-client e a sessao."
 	fi
   ln -sf /etc/sv/epoptes /var/service/ >/dev/null || true
   log "A instalação foi concluída. Antes de utilizar o Epoptes, lembre-se de fazer o seguinte:"
